@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - RunPod Monitor{% endblock %}
+
+{% block header %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">📦 Your Pods</h5>
+                <div class="d-flex align-items-center">
+                    <small class="text-muted me-2">Next refresh:</small>
+                    <span class="badge bg-secondary" id="pod-countdown">30s</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="pods-container" 
+                     hx-get="/pods" 
+                     hx-trigger="load, refresh from:body every 30s"
+                     hx-indicator="#loading">
+                    <p class="text-center">Loading pods...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">🔧 Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <!-- Quick Auto-Stop Toggle -->
+                <div class="mb-3" 
+                     hx-get="/api/auto-stop-status" 
+                     hx-trigger="load, every 5s"
+                     hx-swap="innerHTML">
+                    <div class="d-flex align-items-center">
+                        <span class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </span>
+                        <small class="text-muted">Loading auto-stop status...</small>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <a href="/config" class="btn btn-primary">
+                        ⚙️ Auto-Stop Settings
+                    </a>
+                    <a href="/metrics" class="btn btn-outline-info">
+                        📊 View Metrics History
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📊 System Status</h5>
+            </div>
+            <div class="card-body" 
+                 hx-get="/status" 
+                 hx-trigger="load, every 10s"
+                 hx-swap="innerHTML">
+                <p>Loading status...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Pod refresh countdown timer
+let podCountdownInterval;
+const POD_REFRESH_INTERVAL = 30; // 30 seconds
+
+function startPodCountdown() {
+    let timeLeft = POD_REFRESH_INTERVAL;
+    const timerElement = document.getElementById('pod-countdown');
+    
+    if (!timerElement) return;
+    
+    // Clear existing interval
+    if (podCountdownInterval) {
+        clearInterval(podCountdownInterval);
+    }
+    
+    podCountdownInterval = setInterval(() => {
+        timeLeft--;
+        timerElement.textContent = timeLeft + 's';
+        
+        // Change color as time runs out
+        if (timeLeft <= 5) {
+            timerElement.className = 'badge bg-warning';
+        } else if (timeLeft <= 10) {
+            timerElement.className = 'badge bg-info';
+        } else {
+            timerElement.className = 'badge bg-secondary';
+        }
+        
+        // Reset when countdown finishes
+        if (timeLeft <= 0) {
+            timeLeft = POD_REFRESH_INTERVAL;
+            timerElement.className = 'badge bg-success';
+            timerElement.textContent = 'Refreshing...';
+            setTimeout(() => {
+                if (timerElement) {
+                    timerElement.textContent = POD_REFRESH_INTERVAL + 's';
+                    timerElement.className = 'badge bg-secondary';
+                }
+            }, 1000);
+        }
+    }, 1000);
+}
+
+// Add some custom dashboard behavior
+document.addEventListener('DOMContentLoaded', function() {
+    // Start pod countdown
+    startPodCountdown();
+    
+    // Add pulse animation to loading elements
+    const style = document.createElement('style');
+    style.textContent = `
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+        .htmx-request.htmx-indicator {
+            opacity: 1;
+        }
+    `;
+    document.head.appendChild(style);
+});
+
+// Reset countdown when pods are refreshed
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'pods-container') {
+        console.log('Pods refreshed, restarting countdown');
+        // Small delay to let the page settle
+        setTimeout(startPodCountdown, 100);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,187 @@
+{% if pods %}
+<div class="table-responsive" id="pod-table">
+    <table class="table table-hover pod-table">
+        <thead>
+            <tr>
+                <th>🖥️ Pod Details</th>
+                <th>📊 Status</th>
+                <th>🐳 Image</th>
+                <th>💰 Cost/Hr</th>
+                <th>🔧 CPU</th>
+                <th>💾 Memory</th>
+                <th>🎮 GPU</th>
+                <th>⏱️ Uptime</th>
+                <th>⚡ Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for pod in pods %}
+            <tr class="pod-{{ pod.desiredStatus.lower() }}">
+                <td>
+                    <div class="pod-name">{{ pod.name }}</div>
+                    <div class="pod-id">{{ pod.id }}</div>
+                </td>
+                <td>
+                    {% if pod.desiredStatus == 'RUNNING' %}
+                        <span class="badge bg-success status-badge">✅ {{ pod.desiredStatus }}</span>
+                    {% elif pod.desiredStatus == 'EXITED' %}
+                        <span class="badge bg-warning status-badge">⏸️ {{ pod.desiredStatus }}</span>
+                    {% else %}
+                        <span class="badge bg-secondary status-badge">⚪ {{ pod.desiredStatus }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="max-width: 200px; word-wrap: break-word;">
+                        <small>{{ pod.imageName }}</small>
+                    </div>
+                </td>
+                <td>
+                    <div class="cost-display">${{ "%.3f"|format(pod.costPerHr) }}</div>
+                </td>
+                
+                {% if pod.runtime %}
+                <td>
+                    <span class="badge metric-badge bg-{% if pod.runtime.container.cpuPercent > 80 %}danger{% elif pod.runtime.container.cpuPercent > 50 %}warning{% else %}success{% endif %}">
+                        {{ pod.runtime.container.cpuPercent }}%
+                    </span>
+                </td>
+                <td>
+                    <span class="badge metric-badge bg-{% if pod.runtime.container.memoryPercent > 80 %}danger{% elif pod.runtime.container.memoryPercent > 50 %}warning{% else %}success{% endif %}">
+                        {{ pod.runtime.container.memoryPercent }}%
+                    </span>
+                </td>
+                <td>
+                    {% if pod.runtime.gpus %}
+                        {% set gpu_avg = (pod.runtime.gpus | map(attribute='gpuUtilPercent') | sum) / (pod.runtime.gpus | length) %}
+                        <span class="badge metric-badge bg-{% if gpu_avg > 80 %}danger{% elif gpu_avg > 50 %}warning{% else %}success{% endif %}">
+                            🎮 {{ "%.1f"|format(gpu_avg) }}%
+                        </span>
+                        <br><small class="text-muted">({{ pod.runtime.gpus | length }} GPU{{ 's' if pod.runtime.gpus | length > 1 else '' }})</small>
+                    {% else %}
+                        <span class="badge metric-badge bg-info">🖥️ CPU Only</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set hours = (pod.runtime.uptimeInSeconds // 3600) %}
+                    {% set minutes = ((pod.runtime.uptimeInSeconds % 3600) // 60) %}
+                    <div class="uptime-display">{{ hours }}h {{ minutes }}m</div>
+                </td>
+                {% else %}
+                <td colspan="4" class="text-muted text-center">Pod stopped</td>
+                {% endif %}
+                
+                <td>
+                    <div class="action-buttons mb-2">
+                        {% if pod.desiredStatus == 'RUNNING' %}
+                            <button class="btn btn-outline-danger btn-sm" 
+                                    hx-post="/pods/{{ pod.id }}/stop"
+                                    hx-target="#action-result-{{ loop.index }}"
+                                    hx-confirm="Are you sure you want to stop '{{ pod.name }}'?">
+                                ⏹️ Stop
+                            </button>
+                        {% else %}
+                            {% set is_cpu_pod = (pod.runtime and not pod.runtime.gpus) or (not pod.runtime) %}
+                            {% if is_cpu_pod %}
+                                <button class="btn btn-outline-success btn-sm" 
+                                        hx-post="/pods/{{ pod.id }}/resume"
+                                        hx-target="#action-result-{{ loop.index }}">
+                                    ▶️ Resume
+                                </button>
+                                <i class="fas fa-info-circle info-icon" 
+                                   title="CPU pods may have resume issues. Check logs if it fails." 
+                                   data-bs-toggle="tooltip"></i>
+                            {% else %}
+                                <button class="btn btn-outline-success btn-sm" 
+                                        hx-post="/pods/{{ pod.id }}/resume"
+                                        hx-target="#action-result-{{ loop.index }}">
+                                    ▶️ Resume
+                                </button>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Auto-Stop Exclude/Include Buttons -->
+                    <div class="exclude-buttons">
+                        {% if pod.is_excluded %}
+                            <button class="btn btn-outline-warning btn-sm" 
+                                    hx-post="/pods/{{ pod.id }}/include"
+                                    hx-target="#action-result-{{ loop.index }}"
+                                    hx-swap="innerHTML"
+                                    title="Pod is excluded from auto-stop. Click to include.">
+                                🛡️ Excluded
+                            </button>
+                        {% else %}
+                            <button class="btn btn-outline-secondary btn-sm" 
+                                    hx-post="/pods/{{ pod.id }}/exclude"
+                                    hx-target="#action-result-{{ loop.index }}"
+                                    hx-swap="innerHTML"
+                                    title="Pod included in auto-stop. Click to exclude.">
+                                🎯 Monitored
+                            </button>
+                        {% endif %}
+                    </div>
+                    
+                    <div id="action-result-{{ loop.index }}" class="mt-1"></div>
+                    
+                    {% if pod.desiredStatus != 'RUNNING' %}
+                        {% set is_cpu_pod = (pod.runtime and not pod.runtime.gpus) or (not pod.runtime) %}
+                        {% if is_cpu_pod %}
+                            <div class="cpu-pod-warning">
+                                ⚠️ CPU pods may have limited resume functionality
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mt-4">
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center">
+            <div class="card-body">
+                <h5 class="card-title">📦 {{ pods | length }}</h5>
+                <p class="card-text">Total Pods</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+            <div class="card-body">
+                <h5 class="card-title">✅ {{ pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | list | length }}</h5>
+                <p class="card-text">Running</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
+            <div class="card-body">
+                <h5 class="card-title">⏸️ {{ pods | selectattr('desiredStatus', 'equalto', 'EXITED') | list | length }}</h5>
+                <p class="card-text">Stopped</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <div class="card-body">
+                <h5 class="card-title">💰 ${{ "%.2f"|format(pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | map(attribute='costPerHr') | sum) }}</h5>
+                <p class="card-text">Cost/Hour</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="alert alert-info" role="alert">
+    <h4 class="alert-heading">No pods found</h4>
+    <p>No RunPod instances were found in your account. This could be because:</p>
+    <ul>
+        <li>You don't have any pods created yet</li>
+        <li>There's an API connection issue</li>
+        <li>Your API key might be invalid</li>
+    </ul>
+</div>
+{% endif %}

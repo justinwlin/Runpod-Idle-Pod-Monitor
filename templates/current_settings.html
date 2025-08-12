@@ -1,0 +1,76 @@
+<h6>Auto-Stop Status</h6>
+<p>
+    {% if config.auto_stop.enabled %}
+        <span class="badge bg-success">✅ Enabled</span>
+    {% else %}
+        <span class="badge bg-danger">❌ Disabled</span>
+    {% endif %}
+</p>
+
+<h6>Basic Auto-Stop Thresholds</h6>
+<ul class="list-unstyled">
+    <li><strong>CPU:</strong> ≤ {{ config.auto_stop.thresholds.max_cpu_percent }}%</li>
+    <li><strong>GPU:</strong> ≤ {{ config.auto_stop.thresholds.max_gpu_percent }}%</li>
+    <li><strong>Memory:</strong> ≤ {{ config.auto_stop.thresholds.max_memory_percent }}%</li>
+</ul>
+
+<div class="alert alert-primary" role="alert">
+    <h6 class="mb-2">⏱️ Persistent Duration</h6>
+    <p class="mb-0">
+        <strong>{{ config.auto_stop.thresholds.duration }}s</strong> 
+        <span class="text-muted">
+            ({{ (config.auto_stop.thresholds.duration // 60) }} minutes
+            {% if (config.auto_stop.thresholds.duration // 3600) > 0 %}
+                / {{ (config.auto_stop.thresholds.duration // 3600) }} hours {{ ((config.auto_stop.thresholds.duration % 3600) // 60) }} minutes
+            {% endif %})
+        </span>
+    </p>
+    <small>All thresholds must be met continuously for this duration before stopping</small>
+</div>
+
+<h6>Monitoring Intervals</h6>
+<ul class="list-unstyled">
+    {% set sampling_freq = config.auto_stop.sampling.frequency if config.auto_stop.sampling else 60 %}
+    {% set rolling_window = config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600 %}
+    <li><strong>📊 Data Sampling & Auto-Stop Check:</strong> {{ sampling_freq }}s 
+        <small class="text-muted">({{ (sampling_freq // 60) }} min - unified frequency)</small>
+    </li>
+    <li><strong>💾 Rolling Window:</strong> {{ rolling_window }}s 
+        <small class="text-muted">({{ (rolling_window // 60) }} min)</small>
+    </li>
+</ul>
+
+<h6>Detection Features</h6>
+<ul class="list-unstyled">
+    <li><strong>🔍 No-Change Detection:</strong> 
+        {% if config.auto_stop.thresholds.detect_no_change %}
+            <span class="badge bg-success">✅ Enabled</span>
+        {% else %}
+            <span class="badge bg-secondary">❌ Disabled</span>
+        {% endif %}
+    </li>
+</ul>
+
+<div class="alert alert-info" role="alert">
+    <small>
+        📊 <strong>Current Collection Rate</strong><br>
+        {% set sampling_freq = config.auto_stop.sampling.frequency if config.auto_stop.sampling else 60 %}
+        {% set rolling_window = config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600 %}
+        At {{ sampling_freq }}s intervals:
+        <ul class="mb-0 mt-1">
+            <li>{{ (24 * 3600) // sampling_freq }} data points per day</li>
+            <li>{{ (rolling_window // sampling_freq) }} data points in memory</li>
+        </ul>
+    </small>
+</div>
+
+<h6>Excluded Pods</h6>
+{% if config.auto_stop.exclude_pods %}
+    <ul class="list-unstyled">
+    {% for pod in config.auto_stop.exclude_pods %}
+        <li><code>{{ pod }}</code></li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p class="text-muted">None</p>
+{% endif %}

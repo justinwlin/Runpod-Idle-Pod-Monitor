@@ -1,0 +1,31 @@
+api:
+  key: YOUR_RUNPOD_API_KEY_HERE
+  graphql_url: https://api.runpod.io/graphql
+  rest_url: https://rest.runpod.io/v1
+auto_stop:
+  enabled: false
+  sampling:
+    frequency: 60
+    rolling_window: 3600
+  thresholds:
+    max_cpu_percent: 1
+    max_gpu_percent: 0
+    max_memory_percent: 20
+    duration: 1800
+    detect_no_change: false
+  exclude_pods: []
+  include_pods: []
+storage:
+  data_dir: ./data
+  metrics_file: pod_metrics.json
+  retention_days: 30
+logging:
+  level: INFO
+  file: runpod_monitor.log
+  max_size_mb: 10
+  backup_count: 5
+server:
+  enabled: false
+  host: 0.0.0.0
+  port: 8080
+  dashboard: true

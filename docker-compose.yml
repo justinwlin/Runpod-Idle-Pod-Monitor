@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  runpod-monitor:
+    build: .
+    container_name: runpod-monitor
+    ports:
+      - "8080:8080"
+    environment:
+      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Alternative: Monitor mode only (no web interface)
+  runpod-monitor-cli:
+    build: .
+    container_name: runpod-monitor-cli
+    environment:
+      - RUNPOD_API_KEY=${RUNPOD_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    command: ["python", "run.py", "--monitor"]
+    restart: unless-stopped
+    profiles:
+      - cli-only

@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Metrics - RunPod Monitor{% endblock %}
+
+{% block header %}Metrics History{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-info" role="alert" id="metrics-status">
+            <strong>📊 Active Pod Metrics as of {{ current_time }}</strong> - 
+            {{ total_active_pods }} active pods found, {{ pods_with_metrics }} have metrics data. Inactive pods are automatically cleaned up.
+            
+            <div class="mt-2 d-flex align-items-center" id="monitoring-status" hx-get="/api/monitoring-status" hx-trigger="every 5s" hx-target="this" hx-swap="outerHTML">
+                <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <small class="text-muted">Checking monitoring status...</small>
+            </div>
+            
+            <!-- Next Poll Countdown -->
+            <div class="mt-3" id="next-poll-countdown">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small class="text-muted">Next metrics collection in:</small>
+                    <span class="badge bg-primary" id="countdown-timer">--</span>
+                </div>
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar" role="progressbar" id="countdown-progress" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if summaries %}
+<div class="row" id="metrics-data" hx-get="/metrics" hx-trigger="every 30s" hx-target="this" hx-select="#metrics-data" hx-swap="outerHTML">
+    {% for summary in summaries %}
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">{{ summary.name }}</h6>
+                <span class="badge bg-{% if summary.status == 'RUNNING' %}success{% else %}secondary{% endif %}">
+                    {{ summary.status }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <h6>Current Metrics</h6>
+                        <div class="mb-2">
+                            <span class="badge bg-{% if summary.current_metrics.cpu_percent > 80 %}danger{% elif summary.current_metrics.cpu_percent > 50 %}warning{% else %}success{% endif %}">
+                                CPU: {{ summary.current_metrics.cpu_percent }}%
+                            </span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="badge bg-{% if summary.current_metrics.memory_percent > 80 %}danger{% elif summary.current_metrics.memory_percent > 50 %}warning{% else %}success{% endif %}">
+                                Memory: {{ summary.current_metrics.memory_percent }}%
+                            </span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="badge bg-{% if summary.current_metrics.gpu_percent > 80 %}danger{% elif summary.current_metrics.gpu_percent > 50 %}warning{% else %}success{% endif %}">
+                                GPU: {{ summary.current_metrics.gpu_percent }}%
+                            </span>
+                        </div>
+                        {% if summary.current_metrics.uptime_seconds > 0 %}
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                Uptime: {{ (summary.current_metrics.uptime_seconds // 3600) }}h {{ ((summary.current_metrics.uptime_seconds % 3600) // 60) }}m
+                            </small>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-6">
+                        <h6>Hourly Averages</h6>
+                        <div class="mb-2">
+                            <span class="badge bg-secondary">
+                                Avg CPU: {{ summary.hourly_averages.cpu_percent }}%
+                            </span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="badge bg-secondary">
+                                Avg Memory: {{ summary.hourly_averages.memory_percent }}%
+                            </span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="badge bg-secondary">
+                                Avg GPU: {{ summary.hourly_averages.gpu_percent }}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                <div class="row">
+                    <div class="col-12">
+                        <small class="text-muted">
+                            <strong>Pod ID:</strong> {{ summary.pod_id }}<br>
+                            <strong>Data Points:</strong> {{ summary.total_data_points }}<br>
+                            <strong>First Seen:</strong> {{ summary.first_seen }}<br>
+                            <strong>Last Updated:</strong> {{ summary.last_seen }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Overall Statistics -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📈 Active Pod Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-primary">{{ summaries | length }}</h4>
+                                <p class="card-text">Active Pods</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-success">{{ summaries | selectattr('status', 'equalto', 'RUNNING') | list | length }}</h4>
+                                <p class="card-text">Currently Running</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-info">{{ summaries | map(attribute='total_data_points') | sum }}</h4>
+                                <p class="card-text">Total Data Points</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                {% set avg_cpu = (summaries | map(attribute='hourly_averages.cpu_percent') | sum) / (summaries | length) if summaries else 0 %}
+                                <h4 class="text-warning">{{ "%.1f"|format(avg_cpu) }}%</h4>
+                                <p class="card-text">Avg CPU Usage</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading">No active pod metrics available</h4>
+            <p>No metrics data is available for currently active pods. This could be because:</p>
+            <ul>
+                <li>No pods are currently running</li>
+                <li>The monitoring system hasn't been running</li>
+                <li>Data collection is still starting up</li>
+                <li>Previously tracked pods have been terminated and cleaned up</li>
+            </ul>
+            <hr>
+            <p class="mb-0">Start the monitoring mode to begin collecting metrics data for active pods.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+// Countdown timer for next metrics collection
+let countdownInterval;
+const POLL_INTERVAL = 60; // 60 seconds
+
+function startCountdown() {
+    let timeLeft = POLL_INTERVAL;
+    const timerElement = document.getElementById('countdown-timer');
+    const progressElement = document.getElementById('countdown-progress');
+    
+    if (!timerElement || !progressElement) return;
+    
+    // Clear existing interval
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+    
+    countdownInterval = setInterval(() => {
+        timeLeft--;
+        
+        // Update timer display
+        timerElement.textContent = timeLeft + 's';
+        
+        // Update progress bar (reverse - starts at 100% and goes to 0%)
+        const progressPercent = (timeLeft / POLL_INTERVAL) * 100;
+        progressElement.style.width = progressPercent + '%';
+        
+        // Change color as time runs out
+        if (timeLeft <= 10) {
+            progressElement.className = 'progress-bar bg-warning';
+        } else if (timeLeft <= 5) {
+            progressElement.className = 'progress-bar bg-danger';
+        } else {
+            progressElement.className = 'progress-bar';
+        }
+        
+        // Reset when countdown finishes
+        if (timeLeft <= 0) {
+            timeLeft = POLL_INTERVAL;
+            progressElement.className = 'progress-bar';
+            // Show brief flash when collecting
+            timerElement.textContent = 'Collecting...';
+            setTimeout(() => {
+                if (timerElement) {
+                    timerElement.textContent = POLL_INTERVAL + 's';
+                }
+            }, 1000);
+        }
+    }, 1000);
+}
+
+// Start countdown when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    startCountdown();
+    console.log('Metrics page loaded with countdown timer');
+});
+
+// Restart countdown when HTMX updates the page
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'metrics-data') {
+        console.log('Metrics data refreshed');
+    }
+});
+</script>
+{% endblock %}

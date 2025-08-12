@@ -1,0 +1,37 @@
+query GetAllPodsWithMetrics {
+  myself {
+    pods {
+      id
+      name
+      machine {
+        podHostId
+      }
+      desiredStatus
+      lastStatusChange
+      imageName
+      env
+      containerDiskInGb
+      volumeInGb
+      costPerHr
+      runtime {
+        uptimeInSeconds
+        container {
+          cpuPercent
+          memoryPercent
+        }
+        gpus {
+          id
+          gpuUtilPercent
+          memoryUtilPercent
+        }
+        ports {
+          ip
+          isIpPublic
+          privatePort
+          publicPort
+          type
+        }
+      }
+    }
+  }
+}
