@@ -39,15 +39,17 @@
                     <div class="cost-display">${{ "%.3f"|format(pod.costPerHr) }}</div>
                 </td>
                 
-                {% if pod.runtime %}
+                {% if pod.runtime and pod.runtime.container %}
                 <td>
-                    <span class="badge metric-badge bg-{% if pod.runtime.container.cpuPercent > 80 %}danger{% elif pod.runtime.container.cpuPercent > 50 %}warning{% else %}success{% endif %}">
-                        {{ pod.runtime.container.cpuPercent }}%
+                    {% set cpu_percent = pod.runtime.container.cpuPercent or 0 %}
+                    <span class="badge metric-badge bg-{% if cpu_percent > 80 %}danger{% elif cpu_percent > 50 %}warning{% else %}success{% endif %}">
+                        {{ cpu_percent }}%
                     </span>
                 </td>
                 <td>
-                    <span class="badge metric-badge bg-{% if pod.runtime.container.memoryPercent > 80 %}danger{% elif pod.runtime.container.memoryPercent > 50 %}warning{% else %}success{% endif %}">
-                        {{ pod.runtime.container.memoryPercent }}%
+                    {% set memory_percent = pod.runtime.container.memoryPercent or 0 %}
+                    <span class="badge metric-badge bg-{% if memory_percent > 80 %}danger{% elif memory_percent > 50 %}warning{% else %}success{% endif %}">
+                        {{ memory_percent }}%
                     </span>
                 </td>
                 <td>
@@ -62,8 +64,9 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% set hours = (pod.runtime.uptimeInSeconds // 3600) %}
-                    {% set minutes = ((pod.runtime.uptimeInSeconds % 3600) // 60) %}
+                    {% set uptime = pod.runtime.uptimeInSeconds or 0 %}
+                    {% set hours = (uptime // 3600) %}
+                    {% set minutes = ((uptime % 3600) // 60) %}
                     <div class="uptime-display">{{ hours }}h {{ minutes }}m</div>
                 </td>
                 {% else %}

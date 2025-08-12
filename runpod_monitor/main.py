@@ -25,7 +25,7 @@ next_poll_time = 0
 
 def load_config(config_path: str = "config.yaml"):
     """Load configuration from YAML file or create from template."""
-    global config
+    global config, data_tracker
     
     # Load .env file if it exists
     load_dotenv()
@@ -63,6 +63,15 @@ def load_config(config_path: str = "config.yaml"):
     # Always override API key with environment variable if set
     if os.getenv("RUNPOD_API_KEY"):
         config["api"]["key"] = os.getenv("RUNPOD_API_KEY")
+    
+    # Initialize data tracker
+    if data_tracker is None and config:
+        storage_config = config.get('storage', {})
+        data_tracker = DataTracker(
+            data_dir=storage_config.get('data_dir', './data'),
+            metrics_file=storage_config.get('metrics_file', 'pod_metrics.json')
+        )
+        print(f"🗄️  Data tracker initialized with storage: {storage_config.get('data_dir', './data')}")
     
     return config
 

@@ -91,6 +91,14 @@ class DataTracker:
         if pod_id not in self.data:
             self.data[pod_id] = []
         
+        # Check for pod restart (uptime decreased)
+        current_uptime = metric_point.get("uptime_seconds", 0)
+        if self.data[pod_id] and current_uptime > 0:
+            last_uptime = self.data[pod_id][-1].get("uptime_seconds", 0)
+            if current_uptime < last_uptime - 60:  # Allow 60 second buffer for timing differences
+                print(f"Pod restart detected for {pod_id}: uptime {last_uptime}→{current_uptime}. Clearing old data.")
+                self.data[pod_id] = []  # Clear all historical data
+        
         # Add the metric point
         self.data[pod_id].append(metric_point)
         
@@ -208,6 +216,10 @@ class DataTracker:
             "memory_change": memory_change,
             "total_change": cpu_change + gpu_change + memory_change
         }
+    
+    def has_data(self, pod_id: str):
+        """Check if a pod has any data stored."""
+        return pod_id in self.data and len(self.data[pod_id]) > 0
     
     def clear_pod_data(self, pod_id: str):
         """Clear all historical data for a pod (e.g., when pod is terminated)."""

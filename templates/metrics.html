@@ -18,15 +18,9 @@
                 <small class="text-muted">Checking monitoring status...</small>
             </div>
             
-            <!-- Next Poll Countdown -->
-            <div class="mt-3" id="next-poll-countdown">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <small class="text-muted">Next metrics collection in:</small>
-                    <span class="badge bg-primary" id="countdown-timer">--</span>
-                </div>
-                <div class="progress" style="height: 6px;">
-                    <div class="progress-bar" role="progressbar" id="countdown-progress" style="width: 0%"></div>
-                </div>
+            <!-- Next Collection Info -->
+            <div class="mt-3" id="next-collection-info">
+                <small class="text-muted" id="next-collection-text">Loading collection status...</small>
             </div>
         </div>
     </div>
@@ -174,92 +168,66 @@
 </div>
 {% endif %}
 
-<script>
-// Server-side countdown timer for next metrics collection
-let countdownInterval;
+<!-- Auto-Stop Predictions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">⚠️ Auto-Stop Predictions</h5>
+                <small class="text-muted">Pods approaching auto-stop thresholds</small>
+            </div>
+            <div class="card-body">
+                <div id="auto-stop-predictions" hx-get="/api/auto-stop-predictions" hx-trigger="load, every 20s" hx-swap="innerHTML">
+                    <p>Loading predictions...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-async function fetchNextPoll() {
+<!-- Raw Data Table -->
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📋 Raw Data Points - Click a pod to filter</h5>
+            </div>
+            <div class="card-body">
+                <div id="raw-data-table" hx-get="/api/raw-data" hx-trigger="load, every 15s" hx-swap="innerHTML">
+                    <p>Loading raw data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Simple next collection status
+async function updateNextCollection() {
+    const textElement = document.getElementById('next-collection-text');
+    if (!textElement) return;
+    
     try {
         const response = await fetch('/api/next-poll');
         const data = await response.json();
-        return data;
+        
+        if (data.monitoring_running && data.seconds_remaining > 0) {
+            const nextTime = data.next_collection_time;
+            textElement.textContent = `Next collection at ${nextTime} (in ${data.seconds_remaining}s)`;
+        } else if (data.monitoring_running) {
+            textElement.textContent = 'Collecting data now...';
+        } else {
+            textElement.textContent = 'Not collecting data - monitoring inactive';
+        }
     } catch (error) {
-        console.error('Failed to fetch next poll time:', error);
-        return { seconds_remaining: 60, sampling_frequency: 60 };
+        textElement.textContent = 'Unable to get collection status';
     }
 }
 
-async function updateCountdown() {
-    const timerElement = document.getElementById('countdown-timer');
-    const progressElement = document.getElementById('countdown-progress');
-    
-    if (!timerElement || !progressElement) return;
-    
-    const pollData = await fetchNextPoll();
-    const timeLeft = pollData.seconds_remaining;
-    const totalInterval = pollData.sampling_frequency;
-    const isMonitoring = pollData.monitoring_running;
-    
-    if (!isMonitoring) {
-        // Monitoring not running
-        timerElement.textContent = 'Not collecting';
-        timerElement.className = 'badge bg-secondary';
-        progressElement.style.width = '0%';
-        progressElement.className = 'progress-bar bg-secondary';
-        return;
-    }
-    
-    // Update timer display
-    timerElement.textContent = timeLeft + 's';
-    
-    // Update progress bar (reverse - starts at 100% and goes to 0%)
-    const progressPercent = (timeLeft / totalInterval) * 100;
-    progressElement.style.width = progressPercent + '%';
-    
-    // Change color as time runs out
-    if (timeLeft <= 5) {
-        progressElement.className = 'progress-bar bg-danger';
-        timerElement.className = 'badge bg-danger';
-    } else if (timeLeft <= 10) {
-        progressElement.className = 'progress-bar bg-warning';
-        timerElement.className = 'badge bg-warning';
-    } else {
-        progressElement.className = 'progress-bar';
-        timerElement.className = 'badge bg-primary';
-    }
-    
-    // Show collecting status when very close to poll time
-    if (timeLeft <= 1) {
-        timerElement.textContent = 'Collecting...';
-        progressElement.className = 'progress-bar bg-success';
-    }
-}
-
-function startServerSyncedCountdown() {
-    // Clear existing interval
-    if (countdownInterval) {
-        clearInterval(countdownInterval);
-    }
-    
-    // Update immediately
-    updateCountdown();
-    
-    // Update every second with server data
-    countdownInterval = setInterval(updateCountdown, 1000);
-}
-
-// Start countdown when page loads
+// Update on page load and every 10 seconds
 document.addEventListener('DOMContentLoaded', function() {
-    startServerSyncedCountdown();
-    console.log('Metrics page loaded with server-synced countdown timer');
-});
-
-// Restart countdown when HTMX updates the page
-document.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.detail.target.id === 'metrics-data') {
-        console.log('Metrics data refreshed - resyncing countdown');
-        startServerSyncedCountdown();
-    }
+    updateNextCollection();
+    setInterval(updateNextCollection, 10000);
 });
 </script>
 {% endblock %}

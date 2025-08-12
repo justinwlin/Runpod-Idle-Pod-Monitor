@@ -423,10 +423,29 @@ async def get_monitoring_status():
     sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 30) if current_config else 60
     monitoring_enabled = current_config.get('auto_stop', {}).get('enabled', False) if current_config else False
     
-    # Check if monitoring thread is actually running
-    global monitoring_thread
-    thread_running = monitoring_thread is not None and monitoring_thread.is_alive()
-    monitoring_active = monitoring_enabled and data_tracker is not None and thread_running
+    # Check if monitoring is actually running by looking at the file directly
+    monitoring_active = False
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+            
+        # Find the most recent data point
+        latest_data_time = 0
+        for pod_id, metrics_list in data.items():
+            if metrics_list:
+                latest_metric = metrics_list[-1]
+                metric_time = latest_metric.get('epoch', 0)
+                if metric_time > latest_data_time:
+                    latest_data_time = metric_time
+                    
+        # If we have data within the last 2 minutes, monitoring is running
+        current_time = time.time()
+        if latest_data_time > current_time - 120:
+            monitoring_active = True
+            
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        monitoring_active = False
     
     # Create status indicators
     status_class = "success" if monitoring_active else "warning"
@@ -508,35 +527,326 @@ async def toggle_auto_stop():
 
 @app.get("/api/next-poll")
 async def get_next_poll():
-    """Get real-time next poll countdown."""
-    global monitoring_thread
+    """Simple endpoint - when is next collection?"""
     current_time = time.time()
-    sampling_freq = config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60) if config else 60
     
-    # Check if monitoring is actually running
-    monitoring_running = monitoring_thread is not None and monitoring_thread.is_alive()
+    # Just check the file directly for recent data
+    monitoring_running = False
+    latest_data_time = 0
     
-    if monitoring_running and next_poll_time > 0:
-        seconds_remaining = max(0, int(next_poll_time - current_time))
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+            
+        # Find the most recent data point across all pods
+        for pod_id, metrics_list in data.items():
+            if metrics_list:
+                latest_metric = metrics_list[-1]
+                metric_time = latest_metric.get('epoch', 0)
+                if metric_time > latest_data_time:
+                    latest_data_time = metric_time
+                    
+        # If we have data within the last 2 minutes, monitoring is running
+        if latest_data_time > current_time - 120:
+            monitoring_running = True
+            
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        # No file or bad data = not monitoring
+        monitoring_running = False
+    
+    # Calculate next collection time (assuming 60 second intervals)
+    if monitoring_running and latest_data_time > 0:
+        next_expected = latest_data_time + 60
+        if next_expected > current_time:
+            seconds_remaining = int(next_expected - current_time)
+            next_time_str = datetime.fromtimestamp(next_expected).strftime("%H:%M:%S")
+        else:
+            seconds_remaining = 0
+            next_time_str = "Soon"
     else:
-        # If monitoring not running, show "Not collecting"
-        seconds_remaining = 0 if not monitoring_running else sampling_freq
+        seconds_remaining = 0
+        next_time_str = "Unknown"
     
     return {
         "seconds_remaining": seconds_remaining,
-        "sampling_frequency": sampling_freq,
-        "last_poll": last_poll_time,
-        "next_poll": next_poll_time,
-        "current_time": current_time,
-        "monitoring_running": monitoring_running,
-        "debug": {
-            "monitoring_thread_exists": monitoring_thread is not None,
-            "monitoring_thread_alive": monitoring_thread.is_alive() if monitoring_thread else False,
-            "config_enabled": config.get('auto_stop', {}).get('enabled', False) if config else False,
-            "last_poll_timestamp": last_poll_time,
-            "next_poll_timestamp": next_poll_time
-        }
+        "next_collection_time": next_time_str,
+        "monitoring_running": monitoring_running
     }
+
+@app.get("/api/raw-data")
+async def get_raw_data(request: Request, pod_filter: str = None):
+    """Get raw data points as HTML table with optional pod filtering."""
+    # Read directly from file instead of using data_tracker
+    all_raw_data = []
+    pod_names = set()
+    
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+            
+        for pod_id, metrics_list in data.items():
+            for metric in metrics_list[-20:]:  # Last 20 data points per pod for better filtering
+                all_raw_data.append(metric)
+                if metric.get('name'):
+                    pod_names.add(metric.get('name'))
+                    
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return HTMLResponse("<p>No metrics data file found</p>")
+    
+    # Sort by timestamp, newest first
+    all_raw_data.sort(key=lambda x: x.get('epoch', 0), reverse=True)
+    
+    if not all_raw_data:
+        return HTMLResponse("<p>No raw data points available yet</p>")
+    
+    # Filter by pod if requested (pod_filter can be pod_id or pod_name)
+    if pod_filter:
+        all_raw_data = [metric for metric in all_raw_data 
+                       if metric.get('pod_id') == pod_filter or metric.get('name') == pod_filter]
+    
+    # Get available pods for filter buttons (use current pods to get latest names)
+    current_pods = fetch_pods()
+    available_pods = []
+    if current_pods:
+        for pod in current_pods:
+            pod_id = pod['id']
+            pod_name = pod['name']
+            # Only include pods that have data in the file
+            try:
+                if pod_id in data and data[pod_id]:
+                    available_pods.append({'id': pod_id, 'name': pod_name})
+            except:
+                pass  # Skip if data not available
+    
+    # Sort by name for better UX
+    available_pods.sort(key=lambda x: x['name'])
+    
+    # Build HTML with filter buttons and table
+    html = f'''
+    <div class="mb-3">
+        <div class="btn-group flex-wrap" role="group">
+            <button type="button" class="btn btn-sm {'btn-primary' if not pod_filter else 'btn-outline-primary'}" 
+                    hx-get="/api/raw-data" hx-target="#raw-data-table" hx-swap="innerHTML">
+                All Pods ({len(all_raw_data) if not pod_filter else len([m for pod_metrics in data.values() for m in pod_metrics[-20:]])})
+            </button>
+    '''
+    
+    for pod in available_pods:
+        pod_id = pod['id']
+        pod_name = pod['name']
+        # Count data points for this specific pod ID
+        pod_count = len([m for m in all_raw_data if m.get('pod_id') == pod_id]) if not pod_filter else len(data.get(pod_id, [])[-20:])
+        is_active = pod_filter == pod_id or pod_filter == pod_name
+        html += f'''
+            <button type="button" class="btn btn-sm {'btn-primary' if is_active else 'btn-outline-primary'}" 
+                    hx-get="/api/raw-data?pod_filter={pod_id}" hx-target="#raw-data-table" hx-swap="innerHTML"
+                    title="Pod ID: {pod_id}">
+                {pod_name} ({pod_count})
+            </button>
+        '''
+    
+    html += '''
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Pod Name</th>
+                    <th>Pod ID</th>
+                    <th>Status</th>
+                    <th>CPU%</th>
+                    <th>GPU%</th>
+                    <th>Memory%</th>
+                    <th>Uptime</th>
+                    <th>Cost/Hr</th>
+                </tr>
+            </thead>
+            <tbody>
+    '''
+    
+    display_data = all_raw_data[:100] if not pod_filter else all_raw_data[:50]  # Show more when filtering
+    
+    for metric in display_data:
+        timestamp = datetime.fromisoformat(metric.get('timestamp', '')).strftime('%H:%M:%S') if metric.get('timestamp') else 'Unknown'
+        uptime_hours = metric.get('uptime_seconds', 0) // 3600
+        uptime_mins = (metric.get('uptime_seconds', 0) % 3600) // 60
+        
+        html += f'''
+                <tr>
+                    <td><small>{timestamp}</small></td>
+                    <td><small>{metric.get('name', 'Unknown')}</small></td>
+                    <td><small class="text-muted">{metric.get('pod_id', 'Unknown')[:8]}...</small></td>
+                    <td><span class="badge bg-{'success' if metric.get('status') == 'RUNNING' else 'warning'}">{metric.get('status', 'Unknown')}</span></td>
+                    <td>{metric.get('cpu_percent', 0)}%</td>
+                    <td>{metric.get('gpu_percent', 0)}%</td>
+                    <td>{metric.get('memory_percent', 0)}%</td>
+                    <td><small>{uptime_hours}h {uptime_mins}m</small></td>
+                    <td><small>${metric.get('cost_per_hr', 0)}</small></td>
+                </tr>
+        '''
+    
+    if not display_data:
+        html += '''
+                <tr>
+                    <td colspan="9" class="text-center text-muted">
+                        <em>No data points found for the selected pod</em>
+                    </td>
+                </tr>
+        '''
+    
+    html += '''
+            </tbody>
+        </table>
+    </div>
+    '''
+    
+    return HTMLResponse(html)
+
+@app.get("/api/auto-stop-predictions")
+async def get_auto_stop_predictions(request: Request):
+    """Get predictions for which pods are close to being auto-stopped."""
+    try:
+        from .main import config as current_config
+    except ImportError:
+        from main import config as current_config
+    
+    if not current_config or not current_config.get('auto_stop', {}).get('enabled', False):
+        return HTMLResponse("<p class='text-muted'>Auto-stop is disabled</p>")
+    
+    # Read data from file
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return HTMLResponse("<p class='text-muted'>No data available</p>")
+    
+    # Get thresholds from config
+    thresholds = current_config.get('auto_stop', {}).get('thresholds', {})
+    max_cpu = thresholds.get('max_cpu_percent', 5)
+    max_gpu = thresholds.get('max_gpu_percent', 5)
+    max_memory = thresholds.get('max_memory_percent', 20)
+    duration = thresholds.get('duration', 1800)  # 30 minutes default
+    
+    # Calculate data points needed (duration / sampling frequency)
+    sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60)
+    points_needed = duration // sampling_freq
+    
+    # Get current pods and exclude list
+    current_pods = fetch_pods()
+    exclude_list = current_config.get('auto_stop', {}).get('exclude_pods', [])
+    pod_names = {pod['id']: pod['name'] for pod in current_pods} if current_pods else {}
+    
+    predictions = []
+    
+    for pod_id, metrics_list in data.items():
+        if not metrics_list or pod_id in exclude_list:
+            continue
+            
+        pod_name = pod_names.get(pod_id, f"Pod {pod_id[:8]}")
+        
+        # Only consider RUNNING pods for auto-stop predictions
+        latest_status = metrics_list[-1].get('status', 'UNKNOWN')
+        if latest_status != 'RUNNING':
+            continue
+        
+        # Only check pods that are currently active (in current_pods list)
+        if pod_id not in pod_names:
+            continue
+        
+        # Count consecutive RUNNING points from the most recent that meet auto-stop criteria
+        meeting_criteria = 0
+        
+        # Start from the most recent point and work backwards
+        for metric in reversed(metrics_list):
+            status = metric.get('status')
+            
+            # Only count RUNNING points
+            if status != 'RUNNING':
+                break
+                
+            cpu = metric.get('cpu_percent', 0)
+            gpu = metric.get('gpu_percent', 0)
+            memory = metric.get('memory_percent', 0)
+            
+            # Check if this point meets auto-stop criteria
+            if cpu <= max_cpu and gpu <= max_gpu and memory <= max_memory:
+                meeting_criteria += 1
+                # Stop counting if we've reached the required duration
+                if meeting_criteria >= points_needed:
+                    break
+            else:
+                # Reset count if criteria not met (must be consecutive)
+                meeting_criteria = 0
+        
+        if meeting_criteria > 0:
+            remaining_points = max(0, points_needed - meeting_criteria)
+            predictions.append({
+                'pod_id': pod_id,
+                'pod_name': pod_name,
+                'meeting_criteria': meeting_criteria,
+                'remaining_points': remaining_points,
+                'total_needed': points_needed,
+                'progress_percent': (meeting_criteria / points_needed) * 100
+            })
+    
+    if not predictions:
+        return HTMLResponse("<p class='text-muted'>No pods currently approaching auto-stop thresholds</p>")
+    
+    # Sort by closest to being stopped
+    predictions.sort(key=lambda x: x['remaining_points'])
+    
+    html = '''
+    <div class="table-responsive">
+        <table class="table table-sm">
+            <thead class="table-dark">
+                <tr>
+                    <th>Pod Name</th>
+                    <th>Progress</th>
+                    <th>Data Points</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    '''
+    
+    for pred in predictions:
+        if pred['remaining_points'] == 0:
+            status_class = "danger"
+            status_text = "Ready to Stop"
+        elif pred['remaining_points'] <= 3:
+            status_class = "warning"
+            status_text = f"{pred['remaining_points']} more"
+        else:
+            status_class = "info"
+            status_text = f"{pred['remaining_points']} more"
+        
+        html += f'''
+            <tr>
+                <td><small>{pred['pod_name']}</small></td>
+                <td>
+                    <div class="progress" style="height: 15px;">
+                        <div class="progress-bar bg-{status_class}" style="width: {pred['progress_percent']}%">
+                            {pred['progress_percent']:.0f}%
+                        </div>
+                    </div>
+                </td>
+                <td><small>{pred['meeting_criteria']}/{pred['total_needed']}</small></td>
+                <td><span class="badge bg-{status_class}">{status_text}</span></td>
+            </tr>
+        '''
+    
+    html += '''
+            </tbody>
+        </table>
+    </div>
+    '''
+    
+    return HTMLResponse(html)
 
 @app.get("/api/debug/startup")
 async def debug_startup():

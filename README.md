@@ -39,12 +39,15 @@ docker run -d \
 
 ## 📊 Features
 
-- **Real-time monitoring** - See CPU, GPU, memory usage live
-- **Auto-stop idle pods** - Save money by stopping unused pods
-- **Web dashboard** - Modern interface with live updates  
-- **One-click actions** - Start/stop pods instantly
-- **Historical metrics** - Track usage over time
-- **Smart filtering** - Only shows active pods
+- **Real-time monitoring** - See CPU, GPU, memory usage live with automatic data collection
+- **Auto-stop idle pods** - Save money by stopping unused pods automatically
+- **Web dashboard** - Modern interface with live updates and HTMX-powered interactions
+- **One-click actions** - Start/stop pods instantly with dynamic button switching
+- **Historical metrics** - Track usage over time with detailed pod statistics
+- **Smart filtering** - Only shows active pods with automatic cleanup
+- **Filterable raw data** - Click pod buttons to filter data table by specific pods
+- **Exclude/include management** - Real-time pod exclusion with instant UI updates
+- **Live collection status** - See exactly when next data collection will occur
 
 ## ⚙️ Configuration
 
@@ -84,16 +87,18 @@ python -m runpod_monitor.main --action list
 ## 🌟 What You Get
 
 ### Web Dashboard
-- 📦 **Pod Overview** - Current status of all pods
-- 🔄 **Live Updates** - Real-time status every 5 seconds
-- 📊 **Metrics History** - Usage graphs and statistics
-- ⚙️ **Configuration** - Change settings via web interface
-- 🎯 **Actions** - Start/stop pods with one click
+- 📦 **Pod Overview** - Current status of all pods with exclude/include buttons
+- 🔄 **Live Updates** - Real-time status every 5 seconds with accurate monitoring detection
+- 📊 **Metrics History** - Usage graphs and statistics with filterable raw data table
+- ⚙️ **Configuration** - Change settings via web interface with instant updates
+- 🎯 **Actions** - Start/stop pods with dynamic button switching
+- ⏰ **Collection Status** - Simple text showing next data collection time
 
 ### Smart Monitoring
-- **Background data collection** - Runs automatically when server starts
-- **Active pods only** - Ignores terminated/deleted pods
-- **Automatic cleanup** - Removes old data for deleted pods
+- **Background data collection** - Simple monitoring loop starts immediately with server
+- **Active pods only** - Ignores terminated/deleted pods with automatic cleanup
+- **Excluded pod handling** - Completely stops data collection and removes existing data for excluded pods
+- **Real-time monitoring detection** - UI accurately shows monitoring status based on recent data
 - **Rolling window** - Manages memory usage efficiently
 
 ### Auto-Stop Features
@@ -115,12 +120,27 @@ python -m runpod_monitor.main --action list
 
 The server exposes a REST API at `http://localhost:8080`:
 
+### Pages
 - `GET /` - Dashboard page
 - `GET /pods` - Live pod list (HTMX)
-- `GET /metrics` - Metrics page with live updates
+- `GET /metrics` - Metrics page with live updates and filterable data
 - `GET /config` - Configuration page
-- `POST /config/auto-stop` - Update settings
-- `GET /api/monitoring-status` - Live monitoring status
+
+### Pod Actions
+- `POST /pods/{pod_id}/stop` - Stop a pod with dynamic button update
+- `POST /pods/{pod_id}/resume` - Resume a pod with dynamic button update
+- `POST /pods/{pod_id}/exclude` - Add pod to exclude list
+- `POST /pods/{pod_id}/include` - Remove pod from exclude list
+
+### Configuration
+- `POST /config/auto-stop` - Update basic auto-stop settings
+- `POST /config/no-change` - Update no-change detection
+- `POST /config/sampling` - Update sampling configuration
+
+### API Endpoints
+- `GET /api/monitoring-status` - Live monitoring status (HTML)
+- `GET /api/next-poll` - Next collection time and monitoring status (JSON)
+- `GET /api/raw-data?pod_filter={name}` - Filterable raw data table (HTML)
 - `GET /status` - System status (JSON)
 
 ## 🛡️ Security
