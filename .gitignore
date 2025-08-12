@@ -1,5 +1,8 @@
 # Configuration files with API keys
 config.yaml
+config/runpod_config.yaml
+config/*.yaml
+config/*.yml
 .env
 
 # Python

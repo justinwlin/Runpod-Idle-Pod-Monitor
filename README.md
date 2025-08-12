@@ -9,24 +9,36 @@ https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
 
 ## ⚡ Quick Start
 
-### 1. Clone & Setup
+### 🏃‍♂️ Running on RunPod (Recommended)
+When deploying on RunPod, the API key is **automatically available** - no setup needed!
+
+```bash
+git clone <repository>
+cd RunpodMonitor
+python server.py
+# Open http://localhost:8080
+```
+
+**That's it!** 🎉 The `RUNPOD_API_KEY` environment variable is pre-configured.
+
+### 💻 Running Locally
+
+#### 1. Clone & Setup
 ```bash
 git clone <repository>
 cd RunpodMonitor
 echo "RUNPOD_API_KEY=your_api_key_here" > .env
 ```
 
-### 2. Start Server
+#### 2. Start Server
 ```bash
 python server.py
 ```
 
-### 3. Open Browser
+#### 3. Open Browser
 ```
 http://localhost:8080
 ```
-
-**That's it!** 🎉
 
 ## 📸 Screenshots
 
@@ -77,7 +89,7 @@ The server starts with sensible defaults. To customize:
 
 1. **Edit `config.yaml`** for detailed settings
 2. **Use the web interface** - Go to Config page for real-time changes
-3. **Environment variables** - Set `RUNPOD_API_KEY` and other options
+3. **Environment variables** - `RUNPOD_API_KEY` is auto-configured on RunPod, or set manually for local usage
 
 ### Auto-Stop Settings (via Web UI)
 - **CPU/GPU/Memory thresholds** - Set limits (e.g., ≤5% usage)
@@ -133,7 +145,7 @@ python -m runpod_monitor.main --action list
 
 ## 🚀 Production Tips
 
-1. **Set your API key**: `export RUNPOD_API_KEY=your_key`
+1. **API key**: Auto-configured on RunPod, or set locally with `export RUNPOD_API_KEY=your_key`
 2. **Configure auto-stop**: Use the web interface Config page
 3. **Monitor safely**: Start with high thresholds, then tune down
 4. **Exclude critical pods**: Add important workloads to exclude list (auto-cleaned when pods no longer exist)
