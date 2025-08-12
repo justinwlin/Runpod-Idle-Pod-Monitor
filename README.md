@@ -23,6 +23,20 @@ http://localhost:8080
 
 **That's it!** 🎉
 
+## 📸 Screenshots
+
+### Home Dashboard
+![Home Dashboard](./Home.png)
+*Main dashboard showing pod status, actions, and real-time monitoring*
+
+### Configuration Page  
+![Configuration](./Configuration.png)
+*Auto-stop settings, thresholds, and exclusion management*
+
+### Metrics & Data
+![Metrics Page](./Metrics.png)
+*Historical data, usage graphs, and filterable pod metrics*
+
 ## 🐳 Docker (Secure & Easy)
 
 ```bash
@@ -105,16 +119,18 @@ python -m runpod_monitor.main --action list
 - **Threshold monitoring** - CPU, GPU, memory limits
 - **Duration-based** - Must meet conditions for specified time
 - **No-change detection** - Stops completely idle workloads
-- **Exclude lists** - Protect critical pods
+- **Exclude lists** - Protect critical pods with automatic cleanup
 - **Real-time control** - Enable/disable via web interface
+- **Stop command timing** - After a pod is identified for stopping, allow 2-3 more data collection cycles (2-3 minutes) for the stop command to take effect before re-triggering
 
 ## 🚀 Production Tips
 
 1. **Set your API key**: `export RUNPOD_API_KEY=your_key`
 2. **Configure auto-stop**: Use the web interface Config page
 3. **Monitor safely**: Start with high thresholds, then tune down
-4. **Exclude critical pods**: Add important workloads to exclude list
+4. **Exclude critical pods**: Add important workloads to exclude list (auto-cleaned when pods no longer exist)
 5. **Check logs**: Watch for auto-stop actions
+6. **Stop command timing**: When a pod meets auto-stop criteria, the system issues a stop command but continues monitoring. Allow 2-3 data collection cycles (2-3 minutes) for the API stop command to take effect before expecting the pod status to change to EXITED
 
 ## 📚 API Reference
 
