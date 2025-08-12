@@ -36,6 +36,33 @@ def simple_monitoring_loop():
                     main_module.next_poll_time = current_time + 60  # Next poll in 60 seconds
                     exclude_pods = config.get('auto_stop', {}).get('exclude_pods', []) if config else []
                     
+                    # Auto-cleanup exclusion list: remove pods that no longer exist
+                    if exclude_pods:
+                        current_pod_ids = {pod['id'] for pod in pods}
+                        current_pod_names = {pod['name'] for pod in pods}
+                        original_exclude_count = len(exclude_pods)
+                        
+                        # Keep only pods that still exist (either by ID or name)
+                        exclude_pods = [
+                            pod_ref for pod_ref in exclude_pods 
+                            if pod_ref in current_pod_ids or pod_ref in current_pod_names
+                        ]
+                        
+                        # Save cleaned exclusion list if it changed
+                        if len(exclude_pods) != original_exclude_count:
+                            removed_count = original_exclude_count - len(exclude_pods)
+                            print(f"   🧹 Auto-cleanup: Removed {removed_count} non-existent pods from exclusion list")
+                            config['auto_stop']['exclude_pods'] = exclude_pods
+                            
+                            # Save config to file
+                            try:
+                                from runpod_monitor.web_server import save_config_to_file
+                                config_path = './config/runpod_config.yaml'
+                                save_config_to_file(config, config_path)
+                                print(f"   💾 Updated exclusion list saved to config")
+                            except Exception as e:
+                                print(f"   ⚠️ Failed to save updated exclusion list: {e}")
+                    
                     monitored_count = 0
                     excluded_count = 0
                     

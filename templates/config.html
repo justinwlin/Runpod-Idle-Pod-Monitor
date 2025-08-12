@@ -12,8 +12,20 @@
                 <h5 class="mb-0">⚙️ Auto-Stop Configuration</h5>
             </div>
             <div class="card-body">
+                <!-- Unsaved Changes Alert -->
+                <div id="unsaved-changes-alert" class="alert alert-warning" style="display: none;">
+                    <strong>⚠️ Unsaved Changes!</strong> You have unsaved changes. Click "Save Settings" to apply them.
+                </div>
+                
+                <!-- No-Change Detection Warning -->
+                <div id="no-change-detection-warning" class="alert alert-danger" style="display: none;">
+                    <strong>🚨 No-Change Detection Changed!</strong> 
+                    <span id="no-change-warning-text"></span>
+                    <strong>Click "Save Settings" to apply this change.</strong>
+                </div>
+                
                 <!-- Basic Auto-Stop Form -->
-                <form hx-post="/config/auto-stop" hx-target="#config-result" hx-trigger="change, submit" id="basic-autostop">
+                <form hx-post="/config/auto-stop" hx-target="#config-result" hx-trigger="submit" id="basic-autostop">
                     <div class="alert alert-info">
                         <h6 class="mb-2">📊 Basic Auto-Stop Settings</h6>
                         <p class="mb-0">Stop pods when CPU/GPU/Memory usage stays below thresholds for a persistent duration</p>
@@ -71,17 +83,9 @@
                         </div>
                     </div>
 
-                    <div class="d-grid mb-4">
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            💾 Save Basic Auto-Stop Settings
-                        </button>
-                    </div>
-                </form>
-
-                <hr class="my-4">
-
-                <!-- No-Change Detection Form -->
-                <form hx-post="/config/no-change" hx-target="#config-result" hx-trigger="change" id="no-change-detection">
+                    <hr class="my-4">
+                    
+                    <!-- No-Change Detection Section (now part of main form) -->
                     <div class="alert alert-warning">
                         <h6 class="mb-2">🔍 No-Change Detection (Advanced)</h6>
                         <p class="mb-2">Alternative detection method: Stop pods if metrics don't change at all (complete inactivity)</p>
@@ -90,6 +94,18 @@
                     
                     <div class="row mb-3">
                         <div class="col-12">
+                            <div class="alert alert-danger" role="alert">
+                                <h6 class="alert-heading">⚠️ <strong>WARNING - Advanced Feature</strong></h6>
+                                <p class="mb-2">This detection method stops pods with <strong>unchanging metrics</strong> regardless of usage level:</p>
+                                <ul class="mb-2">
+                                    <li><strong>Stops pods with ANY sustained usage</strong> - even 50% CPU/GPU if metrics never change</li>
+                                    <li><strong>Ignores basic thresholds</strong> - focuses only on metric variation</li>
+                                    <li><strong>May stop legitimate workloads</strong> with consistent resource usage patterns</li>
+                                    <li><strong>Examples:</strong> Training models, rendering jobs, or any sustained workload</li>
+                                </ul>
+                                <p class="mb-0"><strong>Recommendation:</strong> Use only for catching truly frozen/stuck processes. Test carefully and exclude important pods.</p>
+                            </div>
+                            
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="detect_no_change" name="detect_no_change" 
                                        {% if config.auto_stop.thresholds.detect_no_change %}checked{% endif %}>
@@ -110,6 +126,12 @@
                             If CPU%, GPU%, and Memory% values are identical across all {{ (config.auto_stop.thresholds.duration // 60) }} data points, 
                             the pod is considered completely idle and will be stopped.
                         </small>
+                    </div>
+                    
+                    <div class="d-grid mb-4">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            💾 Save Settings
+                        </button>
                     </div>
                 </form>
                 
@@ -271,5 +293,124 @@ function updateWindowDisplay(seconds) {
     
     document.getElementById('window-display').innerHTML = display;
 }
+
+// Form change tracking and save feedback
+let hasUnsavedChanges = false;
+let originalValues = {};
+
+function showUnsavedChanges() {
+    hasUnsavedChanges = true;
+    document.getElementById('unsaved-changes-alert').style.display = 'block';
+}
+
+function hideUnsavedChanges() {
+    hasUnsavedChanges = false;
+    document.getElementById('unsaved-changes-alert').style.display = 'none';
+}
+
+function showNoChangeDetectionWarning(isEnabled) {
+    const warningElement = document.getElementById('no-change-detection-warning');
+    const textElement = document.getElementById('no-change-warning-text');
+    
+    if (isEnabled) {
+        textElement.textContent = 'You are ENABLING aggressive auto-stop detection. This may stop pods unexpectedly! ';
+    } else {
+        textElement.textContent = 'You are DISABLING no-change detection. ';
+    }
+    
+    warningElement.style.display = 'block';
+    
+    // Scroll to the warning to make sure it's visible
+    warningElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideNoChangeDetectionWarning() {
+    document.getElementById('no-change-detection-warning').style.display = 'none';
+}
+
+function trackFormChanges() {
+    // Get all form inputs
+    const forms = ['basic-autostop'];
+    
+    forms.forEach(formId => {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        
+        const inputs = form.querySelectorAll('input, select, textarea');
+        
+        inputs.forEach(input => {
+            // Store original values
+            originalValues[input.name] = input.type === 'checkbox' ? input.checked : input.value;
+            
+            // Track changes
+            input.addEventListener('change', function() {
+                const currentValue = input.type === 'checkbox' ? input.checked : input.value;
+                const originalValue = originalValues[input.name];
+                
+                if (currentValue !== originalValue) {
+                    showUnsavedChanges();
+                    
+                    // Special warning for No-Change Detection toggle
+                    if (input.name === 'detect_no_change') {
+                        showNoChangeDetectionWarning(currentValue);
+                    }
+                } else {
+                    // Check if any other inputs have changes
+                    let anyChanges = false;
+                    inputs.forEach(otherInput => {
+                        const otherCurrent = otherInput.type === 'checkbox' ? otherInput.checked : otherInput.value;
+                        const otherOriginal = originalValues[otherInput.name];
+                        if (otherCurrent !== otherOriginal) {
+                            anyChanges = true;
+                        }
+                    });
+                    if (!anyChanges) {
+                        hideUnsavedChanges();
+                        hideNoChangeDetectionWarning();
+                    }
+                }
+            });
+        });
+    });
+}
+
+// Handle successful form submissions
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'config-result') {
+        // Hide unsaved changes alert after successful save
+        hideUnsavedChanges();
+        hideNoChangeDetectionWarning();
+        
+        // Update original values to current values
+        const forms = ['basic-autostop'];
+        forms.forEach(formId => {
+            const form = document.getElementById(formId);
+            if (!form) return;
+            
+            const inputs = form.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                originalValues[input.name] = input.type === 'checkbox' ? input.checked : input.value;
+            });
+        });
+        
+        // Add success animation to save button
+        const button = evt.detail.elt.querySelector('button[type="submit"]');
+        if (button) {
+            const originalText = button.innerHTML;
+            button.innerHTML = '✅ Saved!';
+            button.classList.add('btn-success');
+            button.classList.remove('btn-primary');
+            
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.classList.remove('btn-success');
+                button.classList.add('btn-primary');
+            }, 2000);
+        }
+    }
+});
+
+// Initialize tracking when page loads
+document.addEventListener('DOMContentLoaded', trackFormChanges);
 </script>
 {% endblock %}

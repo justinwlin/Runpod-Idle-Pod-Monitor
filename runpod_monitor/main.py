@@ -454,6 +454,35 @@ def monitor_pods():
                 # Fetch current pod data
                 pods = fetch_pods()
                 if pods:
+                    # Auto-cleanup exclusion list: remove pods that no longer exist
+                    exclude_list = config.get('auto_stop', {}).get('exclude_pods', [])
+                    if exclude_list:
+                        current_pod_ids = {pod['id'] for pod in pods}
+                        current_pod_names = {pod['name'] for pod in pods}
+                        original_exclude_count = len(exclude_list)
+                        
+                        # Keep only pods that still exist (either by ID or name)
+                        cleaned_exclude_list = [
+                            pod_ref for pod_ref in exclude_list 
+                            if pod_ref in current_pod_ids or pod_ref in current_pod_names
+                        ]
+                        
+                        # Save cleaned exclusion list if it changed
+                        if len(cleaned_exclude_list) != original_exclude_count:
+                            removed_count = original_exclude_count - len(cleaned_exclude_list)
+                            print(f"🧹 Auto-cleanup: Removed {removed_count} non-existent pods from exclusion list")
+                            config['auto_stop']['exclude_pods'] = cleaned_exclude_list
+                            
+                            # Save config to file
+                            try:
+                                import yaml
+                                config_path = './config/runpod_config.yaml'
+                                with open(config_path, 'w') as f:
+                                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                                print(f"💾 Updated exclusion list saved to config")
+                            except Exception as e:
+                                print(f"⚠️ Failed to save updated exclusion list: {e}")
+                    
                     for pod in pods:
                         pod_id = pod['id']
                         pod_name = pod['name']

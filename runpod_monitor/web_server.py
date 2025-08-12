@@ -199,24 +199,26 @@ async def update_auto_stop(
     max_cpu: int = Form(5),
     max_gpu: int = Form(5),
     max_memory: int = Form(10),
-    duration: int = Form(1800)
+    duration: int = Form(1800),
+    detect_no_change: bool = Form(False)
 ):
-    """Update basic auto-stop configuration and persist to file."""
+    """Update auto-stop configuration including no-change detection and persist to file."""
     try:
         from .main import config as current_config
     except ImportError:
         from main import config as current_config
         
-    # Update in-memory configuration (basic auto-stop only)
+    # Update in-memory configuration (all auto-stop settings)
     current_config['auto_stop']['enabled'] = enabled
     current_config['auto_stop']['thresholds']['max_cpu_percent'] = max_cpu
     current_config['auto_stop']['thresholds']['max_gpu_percent'] = max_gpu
     current_config['auto_stop']['thresholds']['max_memory_percent'] = max_memory
     current_config['auto_stop']['thresholds']['duration'] = duration
+    current_config['auto_stop']['thresholds']['detect_no_change'] = detect_no_change
     
     # Save to file for persistence
     if save_config_to_file(current_config, config_path):
-        status_msg = "✅ Basic auto-stop configuration updated and saved successfully!"
+        status_msg = "✅ Auto-stop configuration updated and saved successfully!"
     else:
         status_msg = "⚠️  Configuration updated in memory but failed to save to file"
     
@@ -236,6 +238,7 @@ async def update_auto_stop(
         <div class="alert alert-success" role="alert">
             {status_msg}<br>
             <small>Auto-stop {'enabled' if enabled else 'disabled'}, persistent duration: {duration}s ({duration//60} minutes)</small><br>
+            <small>No-change detection {'enabled' if detect_no_change else 'disabled'}</small><br>
             <small>{monitoring_status}</small>
         </div>
         <div id="current-settings" hx-swap-oob="innerHTML">
@@ -243,39 +246,6 @@ async def update_auto_stop(
         </div>
     ''')
 
-@app.post("/config/no-change")
-async def update_no_change_detection(
-    request: Request,
-    detect_no_change: bool = Form(False)
-):
-    """Update no-change detection configuration separately."""
-    try:
-        from .main import config as current_config
-    except ImportError:
-        from main import config as current_config
-        
-    # Update only the no-change detection setting
-    current_config['auto_stop']['thresholds']['detect_no_change'] = detect_no_change
-    
-    # Save to file for persistence
-    if save_config_to_file(current_config, config_path):
-        status_msg = f"✅ No-Change Detection {'enabled' if detect_no_change else 'disabled'} successfully!"
-    else:
-        status_msg = "⚠️ Configuration updated in memory but failed to save to file"
-    
-    # Render the current settings partial with updated config
-    current_settings_html = templates.get_template("current_settings.html").render({"config": current_config})
-    
-    # Return both the success message and updated current settings using hx-swap-oob
-    return HTMLResponse(f'''
-        <div class="alert alert-success" role="alert">
-            {status_msg}<br>
-            <small>No-change detection will {'stop pods with completely unchanged metrics' if detect_no_change else 'be ignored'}</small>
-        </div>
-        <div id="current-settings" hx-swap-oob="innerHTML">
-            {current_settings_html}
-        </div>
-    ''')
 
 @app.post("/config/sampling")
 async def update_sampling_config(
@@ -521,9 +491,35 @@ async def toggle_auto_stop():
     
     # Save to file
     if save_config_to_file(current_config, config_path):
-        return {"status": "success", "enabled": new_state}
+        # Show success feedback with auto-refresh of the status
+        return HTMLResponse(f'''
+            <div class="toast-container position-fixed top-0 end-0 p-3">
+                <div class="toast show" role="alert">
+                    <div class="toast-header">
+                        <strong class="me-auto">✅ Settings Saved</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        Auto-stop is now <strong>{"enabled" if new_state else "disabled"}</strong>
+                    </div>
+                </div>
+            </div>
+            <div hx-get="/api/auto-stop-status" hx-target=".auto-stop-status" hx-trigger="load delay:500ms" hx-swap="innerHTML"></div>
+        ''')
     else:
-        return {"status": "error", "message": "Failed to save configuration"}
+        return HTMLResponse(f'''
+            <div class="toast-container position-fixed top-0 end-0 p-3">
+                <div class="toast show" role="alert">
+                    <div class="toast-header">
+                        <strong class="me-auto">❌ Error</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        Failed to save configuration
+                    </div>
+                </div>
+            </div>
+        ''')
 
 @app.get("/api/next-poll")
 async def get_next_poll():

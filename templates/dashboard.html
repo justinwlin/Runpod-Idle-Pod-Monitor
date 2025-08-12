@@ -27,60 +27,6 @@
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">🔧 Quick Actions</h5>
-            </div>
-            <div class="card-body">
-                <!-- Quick Auto-Stop Toggle -->
-                <div class="mb-3" 
-                     hx-get="/api/auto-stop-status" 
-                     hx-trigger="load, every 5s"
-                     hx-swap="innerHTML">
-                    <div class="d-flex align-items-center">
-                        <span class="spinner-border spinner-border-sm me-2" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </span>
-                        <small class="text-muted">Loading auto-stop status...</small>
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-2">
-                    <a href="/config" class="btn btn-primary">
-                        ⚙️ Auto-Stop Settings
-                    </a>
-                    <button class="btn btn-success" 
-                            hx-post="/api/monitoring/start" 
-                            hx-target="#debug-result"
-                            hx-swap="innerHTML">
-                        🚀 Start Monitoring (Debug)
-                    </button>
-                    <a href="/metrics" class="btn btn-outline-info">
-                        📊 View Metrics History
-                    </a>
-                    <div id="debug-result" class="mt-2"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">📊 System Status</h5>
-            </div>
-            <div class="card-body" 
-                 hx-get="/status" 
-                 hx-trigger="load, every 10s"
-                 hx-swap="innerHTML">
-                <p>Loading status...</p>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script>
 // Pod refresh countdown timer (client-side since it's just UI refresh)
 let podCountdownInterval;
