@@ -2,6 +2,11 @@
 
 Monitor and auto-manage your RunPod instances with a simple web interface.
 
+----
+Runpod Image:
+https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
+----
+
 ## ⚡ Quick Start
 
 ### 1. Clone & Setup
@@ -36,6 +41,9 @@ http://localhost:8080
 ### Metrics & Data
 ![Metrics Page](./Metrics.png)
 *Historical data, usage graphs, and filterable pod metrics*
+
+## Exclude Pods
+On the home page, you'll see if something is excluded or not. Click the "Monitor" button or the "Exclude" button to switch it to actually shut off or to exclude it from monitoring.
 
 ## 🐳 Docker (Secure & Easy)
 

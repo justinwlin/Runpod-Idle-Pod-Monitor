@@ -95,7 +95,20 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page."""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    # Check if API key is configured
+    try:
+        from .main import config as current_config
+    except ImportError:
+        from main import config as current_config
+    
+    api_key_missing = False
+    if not current_config or not current_config.get('api', {}).get('key') or current_config.get('api', {}).get('key') in ['YOUR_RUNPOD_API_KEY_HERE', '', None]:
+        api_key_missing = True
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, 
+        "api_key_missing": api_key_missing
+    })
 
 @app.get("/pods")
 async def get_pods(request: Request):

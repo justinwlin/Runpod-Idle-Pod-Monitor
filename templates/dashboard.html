@@ -5,23 +5,61 @@
 {% block header %}Dashboard{% endblock %}
 
 {% block content %}
+{% if api_key_missing %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-danger" role="alert">
+            <h4 class="alert-heading">🔑 <strong>API Key Required</strong></h4>
+            <p class="mb-3">No RunPod API key found. The monitoring system cannot function without a valid API key.</p>
+            <hr>
+            <h6>📋 Setup Instructions:</h6>
+            <ol class="mb-2">
+                <li><strong>Get your API key</strong> from <a href="https://console.runpod.io/api-keys" target="_blank" class="alert-link">RunPod Console → API Keys</a></li>
+                <li><strong>Set environment variable:</strong>
+                    <div class="mt-2">
+                        <code class="text-dark bg-light p-2 d-block">export RUNPOD_API_KEY=your_api_key_here</code>
+                    </div>
+                </li>
+                <li><strong>Restart the server:</strong>
+                    <div class="mt-2">
+                        <code class="text-dark bg-light p-2 d-block">python server.py</code>
+                    </div>
+                </li>
+            </ol>
+            <p class="mb-0"><strong>Alternative:</strong> Create a <code>.env</code> file with <code>RUNPOD_API_KEY=your_key</code></p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row">
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">📦 Your Pods</h5>
+                {% if not api_key_missing %}
                 <div class="d-flex align-items-center">
                     <small class="text-muted me-2">Next refresh:</small>
                     <span class="badge bg-secondary" id="pod-countdown">30s</span>
                 </div>
+                {% endif %}
             </div>
             <div class="card-body">
+                {% if api_key_missing %}
+                <div id="pods-container">
+                    <div class="alert alert-warning" role="alert">
+                        <strong>⚠️ Cannot load pods</strong><br>
+                        <small>Set your RunPod API key to view and manage your pods.</small>
+                    </div>
+                </div>
+                {% else %}
                 <div id="pods-container" 
                      hx-get="/pods" 
                      hx-trigger="load, refresh from:body every 30s"
                      hx-indicator="#loading">
                     <p class="text-center">Loading pods...</p>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -69,8 +107,10 @@ function startPodCountdown() {
 
 // Add some custom dashboard behavior
 document.addEventListener('DOMContentLoaded', function() {
-    // Start pod countdown
+    // Only start pod countdown if API key is configured
+    {% if not api_key_missing %}
     startPodCountdown();
+    {% endif %}
     
     // Add pulse animation to loading elements
     const style = document.createElement('style');
@@ -92,9 +132,11 @@ document.addEventListener('DOMContentLoaded', function() {
 // Reset countdown when pods are refreshed
 document.addEventListener('htmx:afterSwap', function(evt) {
     if (evt.detail.target.id === 'pods-container') {
+        {% if not api_key_missing %}
         console.log('Pods refreshed, restarting countdown');
         // Small delay to let the page settle
         setTimeout(startPodCountdown, 100);
+        {% endif %}
     }
 });
 </script>
