@@ -51,9 +51,16 @@
                     <a href="/config" class="btn btn-primary">
                         ⚙️ Auto-Stop Settings
                     </a>
+                    <button class="btn btn-success" 
+                            hx-post="/api/monitoring/start" 
+                            hx-target="#debug-result"
+                            hx-swap="innerHTML">
+                        🚀 Start Monitoring (Debug)
+                    </button>
                     <a href="/metrics" class="btn btn-outline-info">
                         📊 View Metrics History
                     </a>
+                    <div id="debug-result" class="mt-2"></div>
                 </div>
             </div>
         </div>
@@ -75,12 +82,13 @@
 </div>
 
 <script>
-// Pod refresh countdown timer
+// Pod refresh countdown timer (client-side since it's just UI refresh)
 let podCountdownInterval;
+let podCountdownStart = Date.now();
 const POD_REFRESH_INTERVAL = 30; // 30 seconds
 
 function startPodCountdown() {
-    let timeLeft = POD_REFRESH_INTERVAL;
+    podCountdownStart = Date.now();
     const timerElement = document.getElementById('pod-countdown');
     
     if (!timerElement) return;
@@ -91,7 +99,9 @@ function startPodCountdown() {
     }
     
     podCountdownInterval = setInterval(() => {
-        timeLeft--;
+        const elapsed = Math.floor((Date.now() - podCountdownStart) / 1000);
+        const timeLeft = Math.max(0, POD_REFRESH_INTERVAL - elapsed);
+        
         timerElement.textContent = timeLeft + 's';
         
         // Change color as time runs out
@@ -105,15 +115,8 @@ function startPodCountdown() {
         
         // Reset when countdown finishes
         if (timeLeft <= 0) {
-            timeLeft = POD_REFRESH_INTERVAL;
             timerElement.className = 'badge bg-success';
             timerElement.textContent = 'Refreshing...';
-            setTimeout(() => {
-                if (timerElement) {
-                    timerElement.textContent = POD_REFRESH_INTERVAL + 's';
-                    timerElement.className = 'badge bg-secondary';
-                }
-            }, 1000);
         }
     }, 1000);
 }

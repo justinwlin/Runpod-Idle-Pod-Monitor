@@ -19,6 +19,10 @@ except ImportError:
 config = None
 data_tracker = None
 
+# Global timing tracking for server-side polling
+last_poll_time = 0
+next_poll_time = 0
+
 def load_config(config_path: str = "config.yaml"):
     """Load configuration from YAML file or create from template."""
     global config
@@ -431,6 +435,11 @@ def monitor_pods():
             
             # Sample data at the specified frequency
             if current_time - last_sample_time >= sampling_freq:
+                # Update global timing variables
+                global last_poll_time, next_poll_time
+                last_poll_time = current_time
+                next_poll_time = current_time + sampling_freq
+                
                 print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Sampling pod data and checking auto-stop conditions...")
                 
                 # Fetch current pod data
@@ -440,8 +449,13 @@ def monitor_pods():
                         pod_id = pod['id']
                         pod_name = pod['name']
                         
-                        # Track metrics
-                        data_tracker.add_metric(pod_id, pod)
+                        # Only track metrics for non-excluded pods
+                        if should_monitor_pod(pod):
+                            # Track metrics
+                            data_tracker.add_metric(pod_id, pod)
+                        else:
+                            # Remove any existing data for excluded pods
+                            data_tracker.clear_pod_data(pod_id)
                         
                         # Apply rolling window to keep memory usage reasonable
                         data_tracker.apply_rolling_window(pod_id, rolling_window)
@@ -464,7 +478,8 @@ def monitor_pods():
                             
                             # Check auto-stop conditions immediately after data collection
                             if config['auto_stop']['enabled'] and should_monitor_pod(pod):
-                                if data_tracker.check_auto_stop_conditions(pod_id, config['auto_stop']['thresholds']):
+                                exclude_list = config.get('auto_stop', {}).get('exclude_pods', [])
+                                if data_tracker.check_auto_stop_conditions(pod_id, config['auto_stop']['thresholds'], exclude_list):
                                     print(f"⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
                                     
                                     result = stop_pod(pod_id)

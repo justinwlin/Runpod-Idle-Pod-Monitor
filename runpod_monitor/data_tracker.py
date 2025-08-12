@@ -109,17 +109,28 @@ class DataTracker:
             if metric.get("epoch", 0) >= cutoff_time
         ]
     
-    def check_auto_stop_conditions(self, pod_id: str, thresholds: Dict) -> bool:
+    def check_auto_stop_conditions(self, pod_id: str, thresholds: Dict, excluded_pods: List[str] = None) -> bool:
         """
         Check if a pod meets auto-stop conditions.
         
         Args:
             pod_id: Pod ID to check
             thresholds: Dict with max_cpu_percent, max_gpu_percent, max_memory_percent, duration, detect_no_change
+            excluded_pods: List of excluded pod IDs/names to skip (safety check)
             
         Returns:
             True if pod should be stopped, False otherwise
         """
+        # Safety check: never auto-stop excluded pods
+        if excluded_pods:
+            if pod_id in excluded_pods:
+                return False
+            # Also check if pod name is in excluded list (need recent metric for name)
+            recent_metrics = self.get_recent_metrics(pod_id, 300)  # Last 5 minutes
+            if recent_metrics:
+                pod_name = recent_metrics[-1].get("name", "")
+                if pod_name in excluded_pods:
+                    return False
         recent_metrics = self.get_recent_metrics(pod_id, thresholds["duration"])
         
         if not recent_metrics:

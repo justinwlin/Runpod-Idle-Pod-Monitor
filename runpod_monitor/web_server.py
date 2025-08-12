@@ -14,17 +14,19 @@ from datetime import datetime
 from typing import List, Dict
 
 try:
-    from .main import fetch_pods, stop_pod, resume_pod, load_config, config, data_tracker, monitor_pods
+    from .main import fetch_pods, stop_pod, resume_pod, load_config, config, data_tracker, monitor_pods, last_poll_time, next_poll_time
     from .data_tracker import DataTracker
 except ImportError:
-    from main import fetch_pods, stop_pod, resume_pod, load_config, config, data_tracker, monitor_pods
+    from main import fetch_pods, stop_pod, resume_pod, load_config, config, data_tracker, monitor_pods, last_poll_time, next_poll_time
     from data_tracker import DataTracker
 
 # Initialize configuration and data tracker when server starts
 import os
 # Use current working directory for config path
 config_path = 'config.yaml'
+print(f"🔍 Web server loading config from: {os.path.abspath(config_path)}")
 load_config(config_path)
+print(f"📋 Config after loading: auto_stop.enabled = {config.get('auto_stop', {}).get('enabled', 'NOT_SET') if config else 'CONFIG_IS_NONE'}")
 
 def save_config_to_file(config_data, file_path):
     """Save configuration data to YAML file."""
@@ -83,6 +85,11 @@ def stop_monitoring_background():
 # Start monitoring when the server starts
 @app.on_event("startup")
 async def startup_event():
+    print("🔄 Server startup: checking monitoring configuration...")
+    print(f"   Auto-stop enabled: {config.get('auto_stop', {}).get('enabled', False) if config else False}")
+    if config:
+        print(f"   Config loaded: {bool(config)}")
+        print(f"   Auto-stop section: {config.get('auto_stop', {})}")
     start_monitoring_background()
 
 @app.get("/", response_class=HTMLResponse)
@@ -171,7 +178,19 @@ async def get_config(request: Request):
         from .main import config as current_config
     except ImportError:
         from main import config as current_config
-    return templates.TemplateResponse("config.html", {"request": request, "config": current_config})
+    
+    # Get current pods to identify orphaned excluded pods
+    current_pods = fetch_pods()
+    current_pod_ids = {pod['id'] for pod in current_pods} if current_pods else set()
+    
+    excluded_pods = current_config.get('auto_stop', {}).get('exclude_pods', []) if current_config else []
+    orphaned_excluded = [pod_id for pod_id in excluded_pods if pod_id not in current_pod_ids]
+    
+    return templates.TemplateResponse("config.html", {
+        "request": request, 
+        "config": current_config,
+        "orphaned_excluded_pods": orphaned_excluded
+    })
 
 @app.post("/config/auto-stop")
 async def update_auto_stop(
@@ -201,6 +220,14 @@ async def update_auto_stop(
     else:
         status_msg = "⚠️  Configuration updated in memory but failed to save to file"
     
+    # Start or stop monitoring based on enabled state
+    if enabled:
+        start_monitoring_background()
+        monitoring_status = "🔄 Data collection started automatically"
+    else:
+        stop_monitoring_background()
+        monitoring_status = "⏸️ Data collection stopped"
+    
     # Render the current settings partial with updated config
     current_settings_html = templates.get_template("current_settings.html").render({"config": current_config})
     
@@ -208,7 +235,8 @@ async def update_auto_stop(
     return HTMLResponse(f'''
         <div class="alert alert-success" role="alert">
             {status_msg}<br>
-            <small>Auto-stop {'enabled' if enabled else 'disabled'}, persistent duration: {duration}s ({duration//60} minutes)</small>
+            <small>Auto-stop {'enabled' if enabled else 'disabled'}, persistent duration: {duration}s ({duration//60} minutes)</small><br>
+            <small>{monitoring_status}</small>
         </div>
         <div id="current-settings" hx-swap-oob="innerHTML">
             {current_settings_html}
@@ -349,6 +377,13 @@ async def get_status():
     # Get monitoring configuration
     sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60) if current_config else 60
     
+    # Calculate actual next poll time from server-side monitoring
+    current_time = time.time()
+    if next_poll_time > 0:
+        next_poll_seconds = max(0, int(next_poll_time - current_time))
+    else:
+        next_poll_seconds = sampling_freq
+    
     return {
         "status": "running",
         "timestamp": datetime.now().isoformat(),
@@ -356,8 +391,10 @@ async def get_status():
         "tracked_pods": len(data_tracker.get_all_summaries()) if data_tracker else 0,
         "monitoring": {
             "sampling_frequency": sampling_freq,
-            "next_poll_seconds": sampling_freq,  # This would be calculated from actual monitoring process
-            "is_monitoring_active": False  # This should be determined by checking if monitoring process is running
+            "next_poll_seconds": next_poll_seconds,
+            "last_poll_time": last_poll_time,
+            "next_poll_time": next_poll_time,
+            "is_monitoring_active": monitoring_thread is not None and monitoring_thread.is_alive()
         }
     }
 
@@ -469,11 +506,79 @@ async def toggle_auto_stop():
     else:
         return {"status": "error", "message": "Failed to save configuration"}
 
+@app.get("/api/next-poll")
+async def get_next_poll():
+    """Get real-time next poll countdown."""
+    global monitoring_thread
+    current_time = time.time()
+    sampling_freq = config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60) if config else 60
+    
+    # Check if monitoring is actually running
+    monitoring_running = monitoring_thread is not None and monitoring_thread.is_alive()
+    
+    if monitoring_running and next_poll_time > 0:
+        seconds_remaining = max(0, int(next_poll_time - current_time))
+    else:
+        # If monitoring not running, show "Not collecting"
+        seconds_remaining = 0 if not monitoring_running else sampling_freq
+    
+    return {
+        "seconds_remaining": seconds_remaining,
+        "sampling_frequency": sampling_freq,
+        "last_poll": last_poll_time,
+        "next_poll": next_poll_time,
+        "current_time": current_time,
+        "monitoring_running": monitoring_running,
+        "debug": {
+            "monitoring_thread_exists": monitoring_thread is not None,
+            "monitoring_thread_alive": monitoring_thread.is_alive() if monitoring_thread else False,
+            "config_enabled": config.get('auto_stop', {}).get('enabled', False) if config else False,
+            "last_poll_timestamp": last_poll_time,
+            "next_poll_timestamp": next_poll_time
+        }
+    }
+
+@app.get("/api/debug/startup")
+async def debug_startup():
+    """Debug startup state."""
+    global monitoring_thread
+    return {
+        "startup_debug": {
+            "config_exists": config is not None,
+            "config_auto_stop": config.get('auto_stop', {}) if config else None,
+            "monitoring_thread_exists": monitoring_thread is not None,
+            "monitoring_thread_alive": monitoring_thread.is_alive() if monitoring_thread else False,
+            "data_tracker_exists": data_tracker is not None,
+            "server_startup_completed": True
+        }
+    }
+
 @app.post("/api/monitoring/start")
 async def start_monitoring_endpoint():
     """Start monitoring via API endpoint."""
-    start_monitoring_background()
-    return {"status": "success", "message": "Monitoring started"}
+    global monitoring_thread
+    
+    try:
+        start_monitoring_background()
+        
+        # Check if monitoring actually started
+        if monitoring_thread and monitoring_thread.is_alive():
+            status = "success"
+            message = "✅ Data collection started successfully! Check the metrics page to see data being collected."
+        else:
+            status = "warning"
+            message = "⚠️ Monitoring thread started but may not be active. Check auto-stop settings."
+        
+    except Exception as e:
+        status = "danger"
+        message = f"❌ Failed to start monitoring: {str(e)}"
+    
+    return HTMLResponse(f'''
+        <div class="alert alert-{status}" role="alert">
+            {message}
+        </div>
+        <div hx-get="/api/monitoring-status" hx-target="#monitoring-status" hx-trigger="load delay:2s" hx-swap="outerHTML"></div>
+    ''')
 
 @app.post("/api/monitoring/stop") 
 async def stop_monitoring_endpoint():
@@ -533,13 +638,23 @@ async def include_pod(pod_id: str, request: Request):
     except ImportError:
         from main import config as current_config
     
-    # Get pod info to show name
+    # Get pod info to show name - try current pods first, then check exclude list
     pods = fetch_pods()
     pod_name = "Unknown"
+    pod_exists = False
+    
+    # Check if pod exists in current pods
     for pod in pods or []:
         if pod['id'] == pod_id:
             pod_name = pod['name']
+            pod_exists = True
             break
+    
+    # If pod doesn't exist but is in exclude list, allow removal
+    if not pod_exists and current_config and current_config.get('auto_stop', {}).get('exclude_pods'):
+        excluded_pods = current_config['auto_stop']['exclude_pods']
+        if pod_id in excluded_pods:
+            pod_name = f"Deleted pod ({pod_id})"
     
     # Remove from exclude list if present
     if (current_config and 
@@ -550,14 +665,18 @@ async def include_pod(pod_id: str, request: Request):
         
         # Save to file
         if save_config_to_file(current_config, config_path):
-            status = "success"
-            message = f"✅ '{pod_name}' included in auto-stop monitoring"
+            if pod_exists:
+                status = "success"
+                message = f"✅ '{pod_name}' included in auto-stop monitoring"
+            else:
+                status = "success"
+                message = f"✅ Removed '{pod_name}' from exclude list (pod no longer exists)"
         else:
             status = "warning" 
             message = f"⚠️ '{pod_name}' included but failed to save to file"
     else:
         status = "info"
-        message = f"ℹ️ '{pod_name}' already included"
+        message = f"ℹ️ '{pod_name}' already included or not in exclude list"
     
     # Return updated message and trigger pod list refresh
     return HTMLResponse(f'''
@@ -565,6 +684,50 @@ async def include_pod(pod_id: str, request: Request):
             <small>{message}</small>
         </div>
         <div hx-get="/pods" hx-target="#pod-table" hx-trigger="load delay:1s" hx-select="#pod-table" hx-swap="outerHTML"></div>
+    ''')
+
+@app.post("/config/cleanup-excluded")
+async def cleanup_excluded_pods(request: Request):
+    """Remove all excluded pods that no longer exist."""
+    try:
+        from .main import config as current_config
+    except ImportError:
+        from main import config as current_config
+    
+    # Get current pods to identify orphaned excluded pods
+    current_pods = fetch_pods()
+    current_pod_ids = {pod['id'] for pod in current_pods} if current_pods else set()
+    
+    excluded_pods = current_config.get('auto_stop', {}).get('exclude_pods', []) if current_config else []
+    orphaned_excluded = [pod_id for pod_id in excluded_pods if pod_id not in current_pod_ids]
+    
+    if orphaned_excluded:
+        # Remove orphaned pods from exclude list
+        current_config['auto_stop']['exclude_pods'] = [
+            pod_id for pod_id in excluded_pods if pod_id in current_pod_ids
+        ]
+        
+        # Also clean up their data
+        for pod_id in orphaned_excluded:
+            if data_tracker:
+                data_tracker.clear_pod_data(pod_id)
+        
+        # Save to file
+        if save_config_to_file(current_config, config_path):
+            status = "success"
+            message = f"✅ Cleaned up {len(orphaned_excluded)} deleted excluded pods"
+        else:
+            status = "warning" 
+            message = f"⚠️ Cleaned up pods but failed to save to file"
+    else:
+        status = "info"
+        message = "ℹ️ No orphaned excluded pods found"
+    
+    return HTMLResponse(f'''
+        <div class="alert alert-{status} alert-dismissible">
+            <small>{message}</small>
+        </div>
+        <div hx-get="/config" hx-target="body" hx-trigger="load delay:2s" hx-select="body" hx-swap="innerHTML"></div>
     ''')
 
 if __name__ == "__main__":
