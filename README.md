@@ -71,9 +71,13 @@ docker run -d \
 
 The server starts with sensible defaults. To customize:
 
+### Options:
 1. **Edit `config.yaml`** for detailed settings
 2. **Use the web interface** - Go to Config page for real-time changes. The changes get persisted to the file on the server, so you can turn the server on and off, as long the file is not destroyed.
 3. **Environment variables** - `RUNPOD_API_KEY` is auto-configured on RunPod, or set manually for local usage
+
+### Recommendations:
+Just use the Web UI. It will persist into a file, and make it easy rather than messing with the the file directly. The autostop will not be turned on when the server starts up, you do need to "enable it" and set the boundaries for monitoring.
 
 ### Auto-Stop Settings (via Web UI)
 - **CPU/GPU/Memory thresholds** - Set limits (e.g., ≤5% usage)
