@@ -5,6 +5,8 @@ Monitor and auto-manage your RunPod instances with a simple web interface.
 ----
 Runpod Image:
 https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
+
+**IF YOU DEPLOY THIS ON RUNPOD** MAKE SURE TO EXCLUDE THE POD YOU ARE RUNNING THIS ON FROM THE MONITORING. There is an "Monitoring" Button on the home page for the pod, which when you click it will switch it to the exclude list.
 ----
 
 ## ⚡ Quick Start
