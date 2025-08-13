@@ -54,6 +54,10 @@ http://localhost:8080
 ![Metrics Page](./Metrics.png)
 *Historical data, usage graphs, and filterable pod metrics*
 
+### Network Storage Pod - Paused State
+![Network Storage Paused](./ex_paused_state_with_network_storage.png)
+*Example of a network storage pod in paused state - data preserved, can be resumed*
+
 ## Exclude Pods
 On the home page, you'll see if something is excluded or not. Click the "Monitor" button or the "Exclude" button to switch it to actually shut off or to exclude it from monitoring.
 
@@ -142,6 +146,7 @@ python -m runpod_monitor.main --action list
 - **Exclude lists** - Protect critical pods with automatic cleanup
 - **Real-time control** - Enable/disable via web interface
 - **Stop command timing** - After a pod is identified for stopping, allow 2-3 more data collection cycles (2-3 minutes) for the stop command to take effect before re-triggering
+- **Network storage pods** - Pods with network volumes can be stopped using the regular stop functionality (they are paused, not deleted). To permanently delete a network storage pod, you must manually terminate it through the RunPod web interface
 
 ## 🚀 Production Tips
 
@@ -151,6 +156,7 @@ python -m runpod_monitor.main --action list
 4. **Exclude critical pods**: Add important workloads to exclude list (auto-cleaned when pods no longer exist)
 5. **Check logs**: Watch for auto-stop actions
 6. **Stop command timing**: When a pod meets auto-stop criteria, the system issues a stop command but continues monitoring. Allow 2-3 data collection cycles (2-3 minutes) for the API stop command to take effect before expecting the pod status to change to EXITED
+7. **Network storage pods**: The monitor can safely stop pods with network volumes - they are paused (not terminated/deleted). To permanently delete a network storage pod and its data, manually terminate it via RunPod's web interface
 
 ## 📚 API Reference
 

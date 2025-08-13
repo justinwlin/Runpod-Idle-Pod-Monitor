@@ -149,23 +149,6 @@
     </div>
 </div>
 
-{% else %}
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-warning" role="alert">
-            <h4 class="alert-heading">No active pod metrics available</h4>
-            <p>No metrics data is available for currently active pods. This could be because:</p>
-            <ul>
-                <li>No pods are currently running</li>
-                <li>The monitoring system hasn't been running</li>
-                <li>Data collection is still starting up</li>
-                <li>Previously tracked pods have been terminated and cleaned up</li>
-            </ul>
-            <hr>
-            <p class="mb-0">Start the monitoring mode to begin collecting metrics data for active pods.</p>
-        </div>
-    </div>
-</div>
 {% endif %}
 
 <!-- Auto-Stop Predictions -->
