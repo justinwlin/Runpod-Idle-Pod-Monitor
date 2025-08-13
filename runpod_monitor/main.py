@@ -495,8 +495,10 @@ def monitor_pods():
                             # Remove any existing data for excluded pods
                             data_tracker.clear_pod_data(pod_id)
                         
-                        # Apply rolling window to keep memory usage reasonable
-                        data_tracker.apply_rolling_window(pod_id, rolling_window)
+                        # Apply smart rolling window: keep minimum 1 hour, or duration * 1.5 if larger
+                        duration = config.get('auto_stop', {}).get('thresholds', {}).get('duration', 1800)
+                        smart_window = max(3600, int(duration * 1.5))  # min 1 hour, or duration * 1.5
+                        data_tracker.apply_rolling_window(pod_id, smart_window)
                         
                         # Show current status
                         status = pod.get('desiredStatus', 'UNKNOWN')

@@ -4,7 +4,7 @@ Web server for RunPod Monitor with HTMX-based GUI
 """
 
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import time
@@ -64,17 +64,25 @@ def start_monitoring_background():
     """Start monitoring in a background thread if enabled."""
     global monitoring_thread, monitoring_active
     
-    if config and config.get('auto_stop', {}).get('enabled', False):
+    if config:
         if monitoring_thread is None or not monitoring_thread.is_alive():
-            print("🔄 Starting background monitoring...")
+            print("🔄 Starting background data collection...")
             monitoring_active = True
             monitoring_thread = threading.Thread(target=monitor_pods, daemon=True)
             monitoring_thread.start()
-            print("✅ Background monitoring started")
+            auto_stop_enabled = config.get('auto_stop', {}).get('enabled', False)
+            monitor_only = config.get('auto_stop', {}).get('monitor_only', False)
+            if auto_stop_enabled:
+                if monitor_only:
+                    print("✅ Background monitoring started (Monitor-Only mode)")
+                else:
+                    print("✅ Background monitoring started (Auto-Stop active)")
+            else:
+                print("✅ Background data collection started (Auto-Stop disabled)")
         else:
             print("ℹ️  Monitoring already running")
     else:
-        print("⏸️  Monitoring disabled in configuration")
+        print("⏸️  No configuration found")
 
 def stop_monitoring_background():
     """Stop background monitoring."""
@@ -349,12 +357,28 @@ async def get_metrics(request: Request):
     except ImportError:
         from main import config as current_config
     
+    # Get excluded pods information
+    exclude_list = current_config.get('auto_stop', {}).get('exclude_pods', []) if current_config else []
+    excluded_pods_info = []
+    
+    if current_pods and exclude_list:
+        # Find excluded pods that still exist
+        for pod in current_pods:
+            if pod['id'] in exclude_list or pod['name'] in exclude_list:
+                excluded_pods_info.append({
+                    'id': pod['id'],
+                    'name': pod['name'],
+                    'status': pod.get('desiredStatus', 'Unknown')
+                })
+    
     return templates.TemplateResponse("metrics.html", {
         "request": request, 
         "summaries": summaries,
         "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total_active_pods": active_pod_count,
         "pods_with_metrics": pods_with_metrics,
+        "excluded_pods_count": len(excluded_pods_info),
+        "excluded_pods": excluded_pods_info,
         "config": current_config
     })
 
@@ -732,8 +756,8 @@ async def get_auto_stop_predictions(request: Request):
     except ImportError:
         from main import config as current_config
     
-    if not current_config or not current_config.get('auto_stop', {}).get('enabled', False):
-        return HTMLResponse("<p class='text-muted'>Auto-stop is disabled</p>")
+    if not current_config:
+        return HTMLResponse("<p class='text-muted'>No configuration available</p>")
     
     monitor_only = current_config.get('auto_stop', {}).get('monitor_only', False)
     
@@ -778,6 +802,24 @@ async def get_auto_stop_predictions(request: Request):
         if pod_id not in pod_names:
             continue
         
+        # Calculate averages for the time period being analyzed (last duration seconds)
+        cutoff_time = time.time() - duration
+        recent_metrics = [
+            metric for metric in metrics_list
+            if metric.get('epoch', 0) >= cutoff_time and metric.get('status') == 'RUNNING'
+        ]
+        
+        avg_cpu = avg_memory = avg_gpu = 0
+        if recent_metrics:
+            total_cpu = sum(metric.get('cpu_percent', 0) for metric in recent_metrics)
+            total_memory = sum(metric.get('memory_percent', 0) for metric in recent_metrics)
+            total_gpu = sum(metric.get('gpu_percent', 0) for metric in recent_metrics)
+            count = len(recent_metrics)
+            
+            avg_cpu = round(total_cpu / count, 1)
+            avg_memory = round(total_memory / count, 1) 
+            avg_gpu = round(total_gpu / count, 1)
+        
         # Count consecutive RUNNING points from the most recent that meet auto-stop criteria
         meeting_criteria = 0
         
@@ -811,7 +853,10 @@ async def get_auto_stop_predictions(request: Request):
                 'meeting_criteria': meeting_criteria,
                 'remaining_points': remaining_points,
                 'total_needed': points_needed,
-                'progress_percent': (meeting_criteria / points_needed) * 100
+                'progress_percent': (meeting_criteria / points_needed) * 100,
+                'avg_cpu': avg_cpu,
+                'avg_memory': avg_memory,
+                'avg_gpu': avg_gpu
             })
     
     if not predictions:
@@ -826,9 +871,14 @@ async def get_auto_stop_predictions(request: Request):
             <thead class="table-dark">
                 <tr>
                     <th>Pod Name</th>
+                    <th>Pod ID</th>
                     <th>Progress</th>
                     <th>Data Points</th>
+                    <th>Avg CPU %</th>
+                    <th>Avg Memory %</th>
+                    <th>Avg GPU %</th>
                     <th>Status</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -848,9 +898,12 @@ async def get_auto_stop_predictions(request: Request):
             status_class = "info"
             status_text = f"{pred['remaining_points']} more"
         
+        pod_id_short = pred['pod_id'][:8] + "..." if len(pred['pod_id']) > 8 else pred['pod_id']
+        
         html += f'''
             <tr>
                 <td><small>{pred['pod_name']}</small></td>
+                <td><small><code>{pod_id_short}</code></small></td>
                 <td>
                     <div class="progress" style="height: 15px;">
                         <div class="progress-bar bg-{status_class}" style="width: {pred['progress_percent']}%">
@@ -859,7 +912,19 @@ async def get_auto_stop_predictions(request: Request):
                     </div>
                 </td>
                 <td><small>{pred['meeting_criteria']}/{pred['total_needed']}</small></td>
+                <td><small>{pred['avg_cpu']}%</small></td>
+                <td><small>{pred['avg_memory']}%</small></td>
+                <td><small>{pred['avg_gpu']}%</small></td>
                 <td><span class="badge bg-{status_class}">{status_text}</span></td>
+                <td>
+                    <button class="btn btn-outline-danger btn-sm" 
+                            hx-post="/pods/{pred['pod_id']}/stop"
+                            hx-confirm="Stop pod '{pred['pod_name']}'?"
+                            hx-target="closest tr"
+                            hx-swap="outerHTML">
+                        🛑 Stop
+                    </button>
+                </td>
             </tr>
         '''
     
@@ -870,6 +935,120 @@ async def get_auto_stop_predictions(request: Request):
     '''
     
     return HTMLResponse(html)
+
+@app.get("/api/graph-pods")
+async def get_graph_pods():
+    """Get list of pods that have data for graphing."""
+    print("📊 Graph pods API called")
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+        print(f"📊 Loaded data for {len(data)} pods from file")
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"📊 Error loading data: {e}")
+        return JSONResponse([])
+    
+    # Get current active pods
+    current_pods = fetch_pods()
+    print(f"📊 Found {len(current_pods) if current_pods else 0} active pods from API")
+    
+    if not current_pods:
+        # If can't fetch from API, return all pods with data
+        print("📊 API fetch failed, returning all pods with data")
+        pods_with_data = []
+        for pod_id, metrics in data.items():
+            if metrics:
+                # Get pod name from latest metric
+                latest_metric = metrics[-1] if metrics else {}
+                pod_name = latest_metric.get('name', pod_id[:8] + '...')
+                pods_with_data.append({
+                    'id': pod_id,
+                    'name': pod_name
+                })
+        print(f"📊 Returning {len(pods_with_data)} pods with data")
+        return JSONResponse(pods_with_data)
+    
+    active_pod_names = {pod['id']: pod['name'] for pod in current_pods}
+    
+    # Return pods that have data and are currently active
+    pods_with_data = []
+    for pod_id, metrics in data.items():
+        if pod_id in active_pod_names and metrics:
+            pods_with_data.append({
+                'id': pod_id,
+                'name': active_pod_names[pod_id]
+            })
+    
+    print(f"📊 Returning {len(pods_with_data)} active pods with data")
+    return JSONResponse(pods_with_data)
+
+@app.get("/api/graph-data/{pod_id}")
+async def get_graph_data(pod_id: str, timeRange: int = 3600):
+    """Get metrics data for a specific pod for graphing."""
+    try:
+        import json
+        with open('./data/pod_metrics.json', 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return JSONResponse({'error': 'No data available'})
+    
+    if pod_id not in data:
+        return JSONResponse({'error': 'Pod not found'})
+    
+    # Filter data by time range
+    cutoff_time = time.time() - timeRange
+    recent_metrics = [
+        metric for metric in data[pod_id]
+        if metric.get('epoch', 0) >= cutoff_time
+    ]
+    
+    if not recent_metrics:
+        return JSONResponse({'error': 'No recent data'})
+    
+    # Sort by timestamp
+    recent_metrics.sort(key=lambda x: x.get('epoch', 0))
+    
+    # Extract data for chart
+    timestamps = []
+    cpu_data = []
+    memory_data = []
+    gpu_data = []
+    
+    for metric in recent_metrics:
+        # Format timestamp
+        timestamp = metric.get('timestamp', '')
+        if timestamp:
+            # Convert to readable format
+            from datetime import datetime
+            try:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                timestamps.append(dt.strftime('%H:%M:%S'))
+            except:
+                timestamps.append(timestamp[-8:])  # Last 8 chars for time
+        else:
+            timestamps.append('')
+        
+        cpu_data.append(metric.get('cpu_percent', 0))
+        memory_data.append(metric.get('memory_percent', 0))
+        gpu_data.append(metric.get('gpu_percent', 0))
+    
+    # Get pod name
+    current_pods = fetch_pods()
+    pod_name = pod_id[:8] + "..."
+    if current_pods:
+        for pod in current_pods:
+            if pod['id'] == pod_id:
+                pod_name = pod['name']
+                break
+    
+    return JSONResponse({
+        'podName': pod_name,
+        'timestamps': timestamps,
+        'cpu': cpu_data,
+        'memory': memory_data,
+        'gpu': gpu_data
+    })
 
 @app.get("/api/debug/startup")
 async def debug_startup():

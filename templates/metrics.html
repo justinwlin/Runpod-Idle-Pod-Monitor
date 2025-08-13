@@ -26,133 +26,8 @@
     </div>
 </div>
 
-{% if summaries %}
-<div class="row" id="metrics-data" hx-get="/metrics" hx-trigger="every 30s" hx-target="this" hx-select="#metrics-data" hx-swap="outerHTML">
-    {% for summary in summaries %}
-    <div class="col-lg-6 mb-4">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h6 class="mb-0">{{ summary.name }}</h6>
-                <span class="badge bg-{% if summary.status == 'RUNNING' %}success{% else %}secondary{% endif %}">
-                    {{ summary.status }}
-                </span>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-6">
-                        <h6>Current Metrics</h6>
-                        <div class="mb-2">
-                            <span class="badge bg-{% if summary.current_metrics.cpu_percent > 80 %}danger{% elif summary.current_metrics.cpu_percent > 50 %}warning{% else %}success{% endif %}">
-                                CPU: {{ summary.current_metrics.cpu_percent }}%
-                            </span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="badge bg-{% if summary.current_metrics.memory_percent > 80 %}danger{% elif summary.current_metrics.memory_percent > 50 %}warning{% else %}success{% endif %}">
-                                Memory: {{ summary.current_metrics.memory_percent }}%
-                            </span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="badge bg-{% if summary.current_metrics.gpu_percent > 80 %}danger{% elif summary.current_metrics.gpu_percent > 50 %}warning{% else %}success{% endif %}">
-                                GPU: {{ summary.current_metrics.gpu_percent }}%
-                            </span>
-                        </div>
-                        {% if summary.current_metrics.uptime_seconds > 0 %}
-                        <div class="mb-2">
-                            <small class="text-muted">
-                                Uptime: {{ (summary.current_metrics.uptime_seconds // 3600) }}h {{ ((summary.current_metrics.uptime_seconds % 3600) // 60) }}m
-                            </small>
-                        </div>
-                        {% endif %}
-                    </div>
-                    <div class="col-6">
-                        <h6>Hourly Averages</h6>
-                        <div class="mb-2">
-                            <span class="badge bg-secondary">
-                                Avg CPU: {{ summary.hourly_averages.cpu_percent }}%
-                            </span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="badge bg-secondary">
-                                Avg Memory: {{ summary.hourly_averages.memory_percent }}%
-                            </span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="badge bg-secondary">
-                                Avg GPU: {{ summary.hourly_averages.gpu_percent }}%
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                
-                <hr>
-                <div class="row">
-                    <div class="col-12">
-                        <small class="text-muted">
-                            <strong>Pod ID:</strong> {{ summary.pod_id }}<br>
-                            <strong>Data Points:</strong> {{ summary.total_data_points }}<br>
-                            <strong>First Seen:</strong> {{ summary.first_seen }}<br>
-                            <strong>Last Updated:</strong> {{ summary.last_seen }}
-                        </small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-
-<!-- Overall Statistics -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">📈 Active Pod Statistics</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <div class="card border-0">
-                            <div class="card-body">
-                                <h4 class="text-primary">{{ summaries | length }}</h4>
-                                <p class="card-text">Active Pods</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card border-0">
-                            <div class="card-body">
-                                <h4 class="text-success">{{ summaries | selectattr('status', 'equalto', 'RUNNING') | list | length }}</h4>
-                                <p class="card-text">Currently Running</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card border-0">
-                            <div class="card-body">
-                                <h4 class="text-info">{{ summaries | map(attribute='total_data_points') | sum }}</h4>
-                                <p class="card-text">Total Data Points</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card border-0">
-                            <div class="card-body">
-                                {% set avg_cpu = (summaries | map(attribute='hourly_averages.cpu_percent') | sum) / (summaries | length) if summaries else 0 %}
-                                <h4 class="text-warning">{{ "%.1f"|format(avg_cpu) }}%</h4>
-                                <p class="card-text">Avg CPU Usage</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% endif %}
-
-<!-- Auto-Stop Predictions -->
-<div class="row mt-4">
+<!-- Auto-Stop Predictions (Most Important - Top Priority) -->
+<div class="row mt-3">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -174,16 +49,158 @@
     </div>
 </div>
 
-<!-- Raw Data Table -->
-<div class="row mt-5">
+<!-- Overall Statistics -->
+{% if summaries %}
+<div class="row mt-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">📋 Raw Data Points - Click a pod to filter</h5>
+                <h5 class="mb-0">📈 Active Pod Statistics</h5>
             </div>
             <div class="card-body">
-                <div id="raw-data-table" hx-get="/api/raw-data" hx-trigger="load, every 15s" hx-swap="innerHTML">
-                    <p>Loading raw data...</p>
+                <div class="row text-center">
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-primary">{{ summaries | length }}</h4>
+                                <p class="card-text">Monitored Pods</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-success">{{ summaries | selectattr('status', 'equalto', 'RUNNING') | list | length }}</h4>
+                                <p class="card-text">Running</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-secondary">{{ excluded_pods_count }}</h4>
+                                <p class="card-text">Excluded Pods</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-info">{{ summaries | map(attribute='total_data_points') | sum }}</h4>
+                                <p class="card-text">Data Points</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                {% set avg_cpu = (summaries | map(attribute='hourly_averages.cpu_percent') | sum) / (summaries | length) if summaries else 0 %}
+                                <h4 class="text-warning">{{ "%.1f"|format(avg_cpu) }}%</h4>
+                                <p class="card-text">Avg CPU</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="card border-0">
+                            <div class="card-body">
+                                <h4 class="text-muted">{{ total_active_pods }}</h4>
+                                <p class="card-text">Total Pods</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Excluded Pods Details -->
+                {% if excluded_pods %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="alert alert-light">
+                            <h6 class="mb-2">🛡️ Excluded Pods (No Data Collection):</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for pod in excluded_pods %}
+                                    <span class="badge bg-secondary" title="Pod ID: {{ pod.id }}">
+                                        {{ pod.name }} 
+                                        <small class="text-light">({{ pod.status }})</small>
+                                    </span>
+                                {% endfor %}
+                            </div>
+                            <small class="text-muted d-block mt-2">
+                                These pods are protected from auto-stop and have no metrics collected.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Raw Data Section -->
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">📋 Raw Data Points</h5>
+                    <small class="text-muted">Click a pod to filter data</small>
+                </div>
+                <div class="btn-group" role="group">
+                    <input type="radio" class="btn-check" name="viewMode" id="tableView" autocomplete="off" checked>
+                    <label class="btn btn-outline-primary btn-sm" for="tableView">📊 Table</label>
+                    
+                    <input type="radio" class="btn-check" name="viewMode" id="graphView" autocomplete="off">
+                    <label class="btn btn-outline-primary btn-sm" for="graphView">📈 Graph</label>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Table View -->
+                <div id="table-view-container">
+                    <div id="raw-data-table" hx-get="/api/raw-data" hx-trigger="load, every 15s" hx-swap="innerHTML">
+                        <p>Loading raw data...</p>
+                    </div>
+                </div>
+                
+                <!-- Graph View -->
+                <div id="graph-view-container" style="display: none;">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <select id="pod-selector" class="form-select form-select-sm">
+                                <option value="">Select a pod to view graph...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <select id="time-range" class="form-select form-select-sm">
+                                <option value="3600">Last Hour</option>
+                                <option value="14400">Last 4 Hours</option>
+                                <option value="86400">Last 24 Hours</option>
+                                <option value="604800">Last Week</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <button id="show-all-pods" class="btn btn-outline-primary btn-sm w-100">
+                                📊 Show All Pods
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Single Chart Container -->
+                    <div id="single-chart-container" style="height: 400px;">
+                        <canvas id="metricsChart"></canvas>
+                    </div>
+                    
+                    <!-- All Pods Charts Container -->
+                    <div id="all-charts-container" style="display: none;">
+                        <!-- Charts will be dynamically generated here -->
+                    </div>
+                    
+                    <div id="chart-loading" class="text-center mt-3" style="display: none;">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="ms-2">Loading chart data...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -218,5 +235,364 @@ document.addEventListener('DOMContentLoaded', function() {
     updateNextCollection();
     setInterval(updateNextCollection, 10000);
 });
+
+// Chart functionality
+let metricsChart = null;
+
+// Toggle between table and graph view
+document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const tableContainer = document.getElementById('table-view-container');
+        const graphContainer = document.getElementById('graph-view-container');
+        
+        if (this.id === 'tableView') {
+            tableContainer.style.display = 'block';
+            graphContainer.style.display = 'none';
+        } else {
+            tableContainer.style.display = 'none';
+            graphContainer.style.display = 'block';
+            loadPodOptions();
+        }
+    });
+});
+
+// Load available pods for graph selector
+async function loadPodOptions() {
+    console.log('Loading pod options...');
+    try {
+        const response = await fetch('/api/graph-pods');
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            console.error('Response not ok:', response.status, response.statusText);
+            return;
+        }
+        
+        const pods = await response.json();
+        console.log('Pods data:', pods);
+        
+        const selector = document.getElementById('pod-selector');
+        
+        selector.innerHTML = '<option value="">Select a pod to view graph...</option>';
+        
+        if (Array.isArray(pods) && pods.length > 0) {
+            pods.forEach(pod => {
+                const option = document.createElement('option');
+                option.value = pod.id;
+                option.textContent = `${pod.name} (${pod.id.substring(0, 8)}...)`;
+                selector.appendChild(option);
+                console.log('Added pod option:', pod.name);
+            });
+            
+            // Auto-select the first pod and load its chart
+            if (pods.length > 0) {
+                selector.value = pods[0].id;
+                const timeRange = document.getElementById('time-range').value;
+                console.log('Auto-selecting first pod:', pods[0].name);
+                loadChartData(pods[0].id, timeRange);
+            }
+        } else {
+            console.log('No pods available or invalid data format');
+            const option = document.createElement('option');
+            option.value = "";
+            option.textContent = "No pods with data available";
+            selector.appendChild(option);
+        }
+    } catch (error) {
+        console.error('Failed to load pods:', error);
+        const selector = document.getElementById('pod-selector');
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "Error loading pods";
+        selector.appendChild(option);
+    }
+}
+
+// Load chart data
+async function loadChartData(podId, timeRange) {
+    if (!podId) return;
+    
+    const loading = document.getElementById('chart-loading');
+    loading.style.display = 'block';
+    
+    try {
+        const response = await fetch(`/api/graph-data/${podId}?timeRange=${timeRange}`);
+        const data = await response.json();
+        
+        if (metricsChart) {
+            metricsChart.destroy();
+        }
+        
+        const ctx = document.getElementById('metricsChart').getContext('2d');
+        metricsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.timestamps,
+                datasets: [
+                    {
+                        label: 'CPU %',
+                        data: data.cpu,
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Memory %',
+                        data: data.memory,
+                        borderColor: '#28a745',
+                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'GPU %',
+                        data: data.gpu,
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Percentage (%)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: `Metrics for ${data.podName}`
+                    },
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+        
+        loading.style.display = 'none';
+    } catch (error) {
+        console.error('Failed to load chart data:', error);
+        loading.style.display = 'none';
+    }
+}
+
+// Show all pods functionality
+let allPodsCharts = [];
+
+async function showAllPods() {
+    console.log('Show All Pods button clicked');
+    const loading = document.getElementById('chart-loading');
+    const singleContainer = document.getElementById('single-chart-container');
+    const allContainer = document.getElementById('all-charts-container');
+    const timeRange = document.getElementById('time-range').value;
+    
+    console.log('Elements found:', {
+        loading: !!loading,
+        singleContainer: !!singleContainer, 
+        allContainer: !!allContainer,
+        timeRange: timeRange
+    });
+    
+    loading.style.display = 'block';
+    singleContainer.style.display = 'none';
+    allContainer.style.display = 'block';
+    
+    try {
+        console.log('Fetching pods from /api/graph-pods...');
+        // Get all pods
+        const podsResponse = await fetch('/api/graph-pods');
+        console.log('Pods response status:', podsResponse.status);
+        const pods = await podsResponse.json();
+        console.log('Received pods:', pods);
+        
+        if (!Array.isArray(pods) || pods.length === 0) {
+            console.log('No pods available');
+            allContainer.innerHTML = '<p class="text-muted text-center">No pods with data available</p>';
+            loading.style.display = 'none';
+            return;
+        }
+        
+        // Destroy existing charts
+        console.log('Destroying existing charts:', allPodsCharts.length);
+        allPodsCharts.forEach(chart => chart.destroy());
+        allPodsCharts = [];
+        
+        // Create container for all charts
+        allContainer.innerHTML = '';
+        console.log(`Creating charts for ${pods.length} pods`);
+        
+        // Load data for each pod and create charts
+        for (const pod of pods) {
+            console.log(`Processing pod: ${pod.name} (${pod.id})`);
+            const chartDiv = document.createElement('div');
+            chartDiv.className = 'mb-4 border p-3';
+            chartDiv.innerHTML = `
+                <h6>${pod.name} <small class="text-muted">(${pod.id.substring(0, 8)}...)</small></h6>
+                <div style="height: 300px;">
+                    <canvas id="chart-${pod.id}"></canvas>
+                </div>
+            `;
+            allContainer.appendChild(chartDiv);
+            
+            // Load chart data
+            console.log(`Fetching data for pod ${pod.id}...`);
+            const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+            console.log(`Data response status for ${pod.name}:`, response.status);
+            const data = await response.json();
+            console.log(`Data for ${pod.name}:`, data);
+            
+            if (data.error) {
+                console.error(`Error for pod ${pod.name}:`, data.error);
+                chartDiv.innerHTML = `
+                    <h6>${pod.name} <small class="text-muted">(${pod.id.substring(0, 8)}...)</small></h6>
+                    <div class="alert alert-warning">No data available for this pod</div>
+                `;
+                continue;
+            }
+            
+            const ctx = document.getElementById(`chart-${pod.id}`).getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.timestamps,
+                    datasets: [
+                        {
+                            label: 'CPU %',
+                            data: data.cpu,
+                            borderColor: '#007bff',
+                            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Memory %',
+                            data: data.memory,
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'GPU %',
+                            data: data.gpu,
+                            borderColor: '#ffc107',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Percentage (%)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+            
+            allPodsCharts.push(chart);
+            console.log(`Chart created for ${pod.name}`);
+        }
+        
+        console.log(`All ${allPodsCharts.length} charts created successfully`);
+        loading.style.display = 'none';
+    } catch (error) {
+        console.error('Failed to load all pods charts:', error);
+        allContainer.innerHTML = `<p class="text-danger text-center">Error loading charts: ${error.message}</p>`;
+        loading.style.display = 'none';
+    }
+}
+
+function showSingleChart() {
+    const singleContainer = document.getElementById('single-chart-container');
+    const allContainer = document.getElementById('all-charts-container');
+    
+    singleContainer.style.display = 'block';
+    allContainer.style.display = 'none';
+    
+    // Destroy all pods charts to free memory
+    allPodsCharts.forEach(chart => chart.destroy());
+    allPodsCharts = [];
+}
+
+// Event listeners for graph controls
+document.getElementById('pod-selector').addEventListener('change', function() {
+    if (this.value) {
+        showSingleChart();
+        const timeRange = document.getElementById('time-range').value;
+        loadChartData(this.value, timeRange);
+    }
+});
+
+document.getElementById('time-range').addEventListener('change', function() {
+    const podId = document.getElementById('pod-selector').value;
+    const allContainer = document.getElementById('all-charts-container');
+    
+    if (allContainer.style.display === 'block') {
+        // If showing all pods, reload all charts with new time range
+        showAllPods();
+    } else if (podId) {
+        // If showing single pod, reload single chart
+        loadChartData(podId, this.value);
+    }
+});
+
+// Add event listener for Show All Pods button
+document.addEventListener('DOMContentLoaded', function() {
+    const showAllButton = document.getElementById('show-all-pods');
+    console.log('Show All Pods button found:', !!showAllButton);
+    
+    if (showAllButton) {
+        showAllButton.addEventListener('click', function() {
+            console.log('Show All Pods button clicked');
+            // Clear single pod selection
+            document.getElementById('pod-selector').value = '';
+            showAllPods();
+        });
+    } else {
+        console.error('Show All Pods button not found!');
+    }
+});
 </script>
+
+<!-- Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 {% endblock %}

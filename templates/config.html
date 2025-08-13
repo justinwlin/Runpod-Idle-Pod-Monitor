@@ -219,7 +219,7 @@
                 <small class="text-muted">
                     • Every 60 seconds<br>
                     • {{ (24 * 60) }} points/day<br>
-                    • {{ ((config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600) // 60) }} min history
+                    • Smart window: {{ (([3600, (config.auto_stop.thresholds.duration * 1.5)|int] | max) // 60) }} min history
                 </small>
             </div>
         </div>

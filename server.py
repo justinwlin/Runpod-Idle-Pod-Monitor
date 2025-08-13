@@ -85,6 +85,11 @@ def simple_monitoring_loop():
                             main_data_tracker.add_metric(pod_id, pod)
                             print(f"   📊 MONITORED: '{pod_name}' (status: {status}) - metrics collected")
                             
+                            # Apply smart rolling window: keep minimum 1 hour, or duration * 1.5 if larger
+                            duration = config.get('auto_stop', {}).get('thresholds', {}).get('duration', 1800)
+                            smart_window = max(3600, int(duration * 1.5))  # min 1 hour, or duration * 1.5
+                            main_data_tracker.apply_rolling_window(pod_id, smart_window)
+                            
                             # Check auto-stop conditions if enabled
                             if config.get('auto_stop', {}).get('enabled', False):
                                 thresholds = config.get('auto_stop', {}).get('thresholds', {})

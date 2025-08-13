@@ -47,6 +47,8 @@ http://localhost:8080
 
 ### Metrics & Data
 ![Metrics Page](./Metrics.png)
+![Metrics Page](./table.png)
+
 *Historical data, usage graphs, and filterable pod metrics*
 
 ### Network Storage Pod - Paused State
@@ -109,16 +111,32 @@ python -m runpod_monitor.main --action list
 
 ## 🌟 What You Get
 
-### Auto-Stop Features
-- **Stop command timing** - After a pod is identified for stopping, allow 2-3 more data collection cycles (2-3 minutes) for the stop command to take effect before re-triggering
-- **Network storage pods** - Pods with network volumes can be stopped using the regular stop functionality (they are paused, not deleted). To permanently delete a network storage pod, you must manually terminate it through the RunPod web interface
+### Auto-Stop Modes
+- **Active mode** - Automatically stops pods meeting thresholds
+- **Monitor-only mode** - Tracks and alerts about at-risk pods without stopping them
+- **Smart thresholds** - Duration minimum: 60 seconds (was 5 minutes)
+- **Real-time alerts** - Auto-stop predictions show pods at risk with manual stop buttons
+
+### Monitoring Features  
+- **Data visualization** - Toggle between table and graph view for raw metrics
+- **Time range selection** - View historical data: 1 hour, 4 hours, 24 hours, or 1 week
+- **Interactive charts** - CPU, Memory, GPU metrics over time with Chart.js
+- **Smart data retention** - Rolling window: max(1 hour, duration × 1.5)
+- **Disk-based storage** - Minimal memory usage, all data persisted
+- **Network storage support** - Pods with network volumes can be stopped (paused, not deleted)
+
+### Configuration
+- **Clean UI** - Streamlined configuration page with collapsible advanced settings
+- **Real-time validation** - Live feedback on settings changes
+- **Smart defaults** - Intelligent auto-activation based on duration settings
 
 ## 🚀 Production Tips
 
 1. **API key**: Auto-configured on RunPod, or set locally with `export RUNPOD_API_KEY=your_key`
-2. **Configure auto-stop**: Use the web interface Config page
-6. **Stop command timing**: When a pod meets auto-stop criteria, the system issues a stop command but continues monitoring. Allow 2-3 data collection cycles (2-3 minutes) for the API stop command to take effect before expecting the pod status to change to EXITED
-7. **Network storage pods**: The monitor can safely stop pods with network volumes - they are paused (not terminated/deleted). To permanently delete a network storage pod and its data, manually terminate it via RunPod's web interface
+2. **Configure monitoring**: Use Config page - choose Active (auto-stop) or Monitor-Only mode
+3. **Use graph view**: Switch between table and graph in Metrics page for visual analysis
+4. **Set smart durations**: Minimum 60 seconds, rolling window auto-adjusts to max(1 hour, duration × 1.5)
+5. **Monitor network storage**: Pods with network volumes are paused when stopped, not deleted - manually terminate via RunPod web interface to delete data
 
 ## 📚 API Reference
 
@@ -145,6 +163,9 @@ The server exposes a REST API at `http://localhost:8080`:
 - `GET /api/monitoring-status` - Live monitoring status (HTML)
 - `GET /api/next-poll` - Next collection time and monitoring status (JSON)
 - `GET /api/raw-data?pod_filter={name}` - Filterable raw data table (HTML)
+- `GET /api/auto-stop-predictions` - Pods at risk of being stopped (HTML)
+- `GET /api/graph-pods` - Available pods for graphing (JSON)
+- `GET /api/graph-data/{pod_id}?timeRange={seconds}` - Chart data for specific pod (JSON)
 - `GET /status` - System status (JSON)
 
 ---
