@@ -10,14 +10,7 @@ https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
 ## ⚡ Quick Start
 
 ### 🏃‍♂️ Running on RunPod (Recommended)
-When deploying on RunPod, the API key is **automatically available** - no setup needed!
-
-```bash
-git clone <repository>
-cd RunpodMonitor
-python server.py
-# Open http://localhost:8080
-```
+Just click the Runpod image template, and start it on the lowest CPU pod.
 
 **That's it!** 🎉 The `RUNPOD_API_KEY` environment variable is pre-configured.
 
@@ -74,25 +67,12 @@ docker run -d \
   -v $(pwd)/data:/app/data \
   runpod-monitor
 ```
-
-## 📊 Features
-
-- **Real-time monitoring** - See CPU, GPU, memory usage live with automatic data collection
-- **Auto-stop idle pods** - Save money by stopping unused pods automatically
-- **Web dashboard** - Modern interface with live updates and HTMX-powered interactions
-- **One-click actions** - Start/stop pods instantly with dynamic button switching
-- **Historical metrics** - Track usage over time with detailed pod statistics
-- **Smart filtering** - Only shows active pods with automatic cleanup
-- **Filterable raw data** - Click pod buttons to filter data table by specific pods
-- **Exclude/include management** - Real-time pod exclusion with instant UI updates
-- **Live collection status** - See exactly when next data collection will occur
-
 ## ⚙️ Configuration
 
 The server starts with sensible defaults. To customize:
 
 1. **Edit `config.yaml`** for detailed settings
-2. **Use the web interface** - Go to Config page for real-time changes
+2. **Use the web interface** - Go to Config page for real-time changes. The changes get persisted to the file on the server, so you can turn the server on and off, as long the file is not destroyed.
 3. **Environment variables** - `RUNPOD_API_KEY` is auto-configured on RunPod, or set manually for local usage
 
 ### Auto-Stop Settings (via Web UI)
@@ -124,27 +104,7 @@ python -m runpod_monitor.main --action list
 
 ## 🌟 What You Get
 
-### Web Dashboard
-- 📦 **Pod Overview** - Current status of all pods with exclude/include buttons
-- 🔄 **Live Updates** - Real-time status every 5 seconds with accurate monitoring detection
-- 📊 **Metrics History** - Usage graphs and statistics with filterable raw data table
-- ⚙️ **Configuration** - Change settings via web interface with instant updates
-- 🎯 **Actions** - Start/stop pods with dynamic button switching
-- ⏰ **Collection Status** - Simple text showing next data collection time
-
-### Smart Monitoring
-- **Background data collection** - Simple monitoring loop starts immediately with server
-- **Active pods only** - Ignores terminated/deleted pods with automatic cleanup
-- **Excluded pod handling** - Completely stops data collection and removes existing data for excluded pods
-- **Real-time monitoring detection** - UI accurately shows monitoring status based on recent data
-- **Rolling window** - Manages memory usage efficiently
-
 ### Auto-Stop Features
-- **Threshold monitoring** - CPU, GPU, memory limits
-- **Duration-based** - Must meet conditions for specified time
-- **No-change detection** - Stops completely idle workloads
-- **Exclude lists** - Protect critical pods with automatic cleanup
-- **Real-time control** - Enable/disable via web interface
 - **Stop command timing** - After a pod is identified for stopping, allow 2-3 more data collection cycles (2-3 minutes) for the stop command to take effect before re-triggering
 - **Network storage pods** - Pods with network volumes can be stopped using the regular stop functionality (they are paused, not deleted). To permanently delete a network storage pod, you must manually terminate it through the RunPod web interface
 
@@ -152,9 +112,6 @@ python -m runpod_monitor.main --action list
 
 1. **API key**: Auto-configured on RunPod, or set locally with `export RUNPOD_API_KEY=your_key`
 2. **Configure auto-stop**: Use the web interface Config page
-3. **Monitor safely**: Start with high thresholds, then tune down
-4. **Exclude critical pods**: Add important workloads to exclude list (auto-cleaned when pods no longer exist)
-5. **Check logs**: Watch for auto-stop actions
 6. **Stop command timing**: When a pod meets auto-stop criteria, the system issues a stop command but continues monitoring. Allow 2-3 data collection cycles (2-3 minutes) for the API stop command to take effect before expecting the pod status to change to EXITED
 7. **Network storage pods**: The monitor can safely stop pods with network volumes - they are paused (not terminated/deleted). To permanently delete a network storage pod and its data, manually terminate it via RunPod's web interface
 
@@ -184,13 +141,6 @@ The server exposes a REST API at `http://localhost:8080`:
 - `GET /api/next-poll` - Next collection time and monitoring status (JSON)
 - `GET /api/raw-data?pod_filter={name}` - Filterable raw data table (HTML)
 - `GET /status` - System status (JSON)
-
-## 🛡️ Security
-
-- **API Keys**: Store in environment variables, never commit to code
-- **Exclude Lists**: Protect production workloads from auto-stop
-- **Testing**: Verify thresholds on non-critical pods first
-- **Monitoring**: Watch logs for unexpected auto-stop actions
 
 ---
 
