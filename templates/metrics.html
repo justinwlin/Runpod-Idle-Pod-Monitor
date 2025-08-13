@@ -157,7 +157,13 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">⚠️ Auto-Stop Predictions</h5>
-                <small class="text-muted">Pods approaching auto-stop thresholds</small>
+                <small class="text-muted">
+                    {% if config.auto_stop.monitor_only %}
+                        🔍 Monitor-Only Mode: Pods that would be stopped (no actual stopping)
+                    {% else %}
+                        Pods approaching auto-stop thresholds
+                    {% endif %}
+                </small>
             </div>
             <div class="card-body">
                 <div id="auto-stop-predictions" hx-get="/api/auto-stop-predictions" hx-trigger="load, every 20s" hx-swap="innerHTML">

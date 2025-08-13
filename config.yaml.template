@@ -4,6 +4,7 @@ api:
   rest_url: https://rest.runpod.io/v1
 auto_stop:
   enabled: false
+  monitor_only: false
   sampling:
     frequency: 60
     rolling_window: 3600

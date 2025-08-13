@@ -88,15 +88,20 @@ def simple_monitoring_loop():
                             # Check auto-stop conditions if enabled
                             if config.get('auto_stop', {}).get('enabled', False):
                                 thresholds = config.get('auto_stop', {}).get('thresholds', {})
+                                monitor_only = config.get('auto_stop', {}).get('monitor_only', False)
+                                
                                 if main_data_tracker.check_auto_stop_conditions(pod_id, thresholds, exclude_pods):
-                                    print(f"   ⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
-                                    
-                                    from runpod_monitor.main import stop_pod
-                                    result = stop_pod(pod_id)
-                                    if result and result.get('podStop'):
-                                        print(f"   ✅ Pod '{pod_name}' stopped successfully")
+                                    if monitor_only:
+                                        print(f"   🔍 MONITOR-ONLY: Pod '{pod_name}' ({pod_id}) meets auto-stop conditions (would be stopped)")
                                     else:
-                                        print(f"   ❌ Failed to stop pod '{pod_name}'")
+                                        print(f"   ⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
+                                        
+                                        from runpod_monitor.main import stop_pod
+                                        result = stop_pod(pod_id)
+                                        if result and result.get('podStop'):
+                                            print(f"   ✅ Pod '{pod_name}' stopped successfully")
+                                        else:
+                                            print(f"   ❌ Failed to stop pod '{pod_name}'")
                             
                             monitored_count += 1
                     

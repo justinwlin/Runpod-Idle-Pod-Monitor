@@ -209,6 +209,7 @@ async def get_config(request: Request):
 async def update_auto_stop(
     request: Request,
     enabled: bool = Form(False),
+    monitor_only: bool = Form(False),
     max_cpu: int = Form(5),
     max_gpu: int = Form(5),
     max_memory: int = Form(10),
@@ -223,6 +224,7 @@ async def update_auto_stop(
         
     # Update in-memory configuration (all auto-stop settings)
     current_config['auto_stop']['enabled'] = enabled
+    current_config['auto_stop']['monitor_only'] = monitor_only
     current_config['auto_stop']['thresholds']['max_cpu_percent'] = max_cpu
     current_config['auto_stop']['thresholds']['max_gpu_percent'] = max_gpu
     current_config['auto_stop']['thresholds']['max_memory_percent'] = max_memory
@@ -341,12 +343,19 @@ async def get_metrics(request: Request):
         pods_with_metrics = 0
         print("Warning: Could not fetch current pods from RunPod API")
     
+    # Get config for template
+    try:
+        from .main import config as current_config
+    except ImportError:
+        from main import config as current_config
+    
     return templates.TemplateResponse("metrics.html", {
         "request": request, 
         "summaries": summaries,
         "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total_active_pods": active_pod_count,
-        "pods_with_metrics": pods_with_metrics
+        "pods_with_metrics": pods_with_metrics,
+        "config": current_config
     })
 
 @app.get("/status")
@@ -726,6 +735,8 @@ async def get_auto_stop_predictions(request: Request):
     if not current_config or not current_config.get('auto_stop', {}).get('enabled', False):
         return HTMLResponse("<p class='text-muted'>Auto-stop is disabled</p>")
     
+    monitor_only = current_config.get('auto_stop', {}).get('monitor_only', False)
+    
     # Read data from file
     try:
         import json
@@ -826,7 +837,10 @@ async def get_auto_stop_predictions(request: Request):
     for pred in predictions:
         if pred['remaining_points'] == 0:
             status_class = "danger"
-            status_text = "Ready to Stop"
+            if monitor_only:
+                status_text = "🔍 Monitor Alert"
+            else:
+                status_text = "Ready to Stop"
         elif pred['remaining_points'] <= 3:
             status_class = "warning"
             status_text = f"{pred['remaining_points']} more"

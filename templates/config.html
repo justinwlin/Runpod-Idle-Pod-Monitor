@@ -7,246 +7,236 @@
 {% block content %}
 <div class="row">
     <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">⚙️ Auto-Stop Configuration</h5>
-            </div>
-            <div class="card-body">
-                <!-- Unsaved Changes Alert -->
-                <div id="unsaved-changes-alert" class="alert alert-warning" style="display: none;">
-                    <strong>⚠️ Unsaved Changes!</strong> You have unsaved changes. Click "Save Settings" to apply them.
+        <!-- Unsaved Changes Alert -->
+        <div id="unsaved-changes-alert" class="alert alert-warning" style="display: none;">
+            <strong>⚠️ Unsaved Changes!</strong> You have unsaved changes. Click "Save Settings" to apply them.
+        </div>
+        
+        <!-- No-Change Detection Warning -->
+        <div id="no-change-detection-warning" class="alert alert-danger" style="display: none;">
+            <strong>🚨 No-Change Detection Changed!</strong> 
+            <span id="no-change-warning-text"></span>
+            <strong>Click "Save Settings" to apply this change.</strong>
+        </div>
+
+        <!-- Main Configuration Form -->
+        <form hx-post="/config/auto-stop" hx-target="#config-result" hx-trigger="submit" id="basic-autostop">
+            
+            <!-- Main Settings Card -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">⚙️ Auto-Stop Configuration</h5>
                 </div>
-                
-                <!-- No-Change Detection Warning -->
-                <div id="no-change-detection-warning" class="alert alert-danger" style="display: none;">
-                    <strong>🚨 No-Change Detection Changed!</strong> 
-                    <span id="no-change-warning-text"></span>
-                    <strong>Click "Save Settings" to apply this change.</strong>
-                </div>
-                
-                <!-- Basic Auto-Stop Form -->
-                <form hx-post="/config/auto-stop" hx-target="#config-result" hx-trigger="submit" id="basic-autostop">
-                    <div class="alert alert-info">
-                        <h6 class="mb-2">📊 Basic Auto-Stop Settings</h6>
-                        <p class="mb-0">Stop pods when CPU/GPU/Memory usage stays below thresholds for a persistent duration</p>
-                    </div>
+                <div class="card-body">
                     
-                    <div class="row mb-3">
-                        <div class="col-12">
-                            <div class="form-check form-switch">
+                    <!-- Mode Selection -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
                                 <input class="form-check-input" type="checkbox" id="enabled" name="enabled" 
                                        {% if config.auto_stop.enabled %}checked{% endif %}>
                                 <label class="form-check-label" for="enabled">
-                                    <strong>Enable Auto-Stop</strong>
+                                    <strong>✅ Enable Auto-Stop</strong>
                                 </label>
-                                <div class="form-text">Automatically stop pods when they meet the thresholds below</div>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label for="max_cpu" class="form-label">Max CPU % (≤)</label>
-                            <input type="number" class="form-control" id="max_cpu" name="max_cpu" 
-                                   value="{{ config.auto_stop.thresholds.max_cpu_percent }}" min="0" max="100">
-                            <div class="form-text">Stop if CPU ≤ this % (0 = stop idle pods)</div>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="max_gpu" class="form-label">Max GPU % (≤)</label>
-                            <input type="number" class="form-control" id="max_gpu" name="max_gpu" 
-                                   value="{{ config.auto_stop.thresholds.max_gpu_percent }}" min="0" max="100">
-                            <div class="form-text">Stop if GPU ≤ this % (0 = stop idle pods)</div>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="max_memory" class="form-label">Max Memory % (≤)</label>
-                            <input type="number" class="form-control" id="max_memory" name="max_memory" 
-                                   value="{{ config.auto_stop.thresholds.max_memory_percent }}" min="0" max="100">
-                            <div class="form-text">Stop if Memory ≤ this % (0 = stop idle pods)</div>
-                        </div>
-                    </div>
-
-                    <div class="row mb-4">
-                        <div class="col-md-8">
-                            <label for="duration" class="form-label"><strong>⏱️ Persistent Duration (seconds)</strong></label>
-                            <input type="number" class="form-control form-control-lg" id="duration" name="duration" 
-                                   value="{{ config.auto_stop.thresholds.duration }}" min="300"
-                                   oninput="updateDurationDisplay(this.value)">
-                            <div class="form-text"><strong>How long ALL thresholds must be met continuously before stopping the pod</strong></div>
-                            <div class="text-primary mt-2">
-                                <strong id="duration-display">
-                                    = {{ (config.auto_stop.thresholds.duration // 60) }} minutes
-                                    {% if (config.auto_stop.thresholds.duration // 3600) > 0 %}
-                                        ({{ (config.auto_stop.thresholds.duration // 3600) }} hours {{ ((config.auto_stop.thresholds.duration % 3600) // 60) }} minutes)
-                                    {% endif %}
-                                </strong>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="my-4">
-                    
-                    <!-- No-Change Detection Section (now part of main form) -->
-                    <div class="alert alert-warning">
-                        <h6 class="mb-2">🔍 No-Change Detection (Advanced)</h6>
-                        <p class="mb-2">Alternative detection method: Stop pods if metrics don't change at all (complete inactivity)</p>
-                        <p class="mb-0"><strong>Detection Window:</strong> Monitors for <strong>{{ config.auto_stop.thresholds.duration }}s</strong> ({{ (config.auto_stop.thresholds.duration // 60) }} minutes) at <strong>60-second intervals</strong></p>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-12">
-                            <div class="alert alert-danger" role="alert">
-                                <h6 class="alert-heading">⚠️ <strong>WARNING - Advanced Feature</strong></h6>
-                                <p class="mb-2">This detection method stops pods with <strong>unchanging metrics</strong> regardless of usage level:</p>
-                                <ul class="mb-2">
-                                    <li><strong>Stops pods with ANY sustained usage</strong> - even 50% CPU/GPU if metrics never change</li>
-                                    <li><strong>Ignores basic thresholds</strong> - focuses only on metric variation</li>
-                                    <li><strong>May stop legitimate workloads</strong> with consistent resource usage patterns</li>
-                                    <li><strong>Examples:</strong> Training models, rendering jobs, or any sustained workload</li>
-                                </ul>
-                                <p class="mb-0"><strong>Recommendation:</strong> Use only for catching truly frozen/stuck processes. Test carefully and exclude important pods.</p>
-                            </div>
-                            
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="detect_no_change" name="detect_no_change" 
-                                       {% if config.auto_stop.thresholds.detect_no_change %}checked{% endif %}>
-                                <label class="form-check-label" for="detect_no_change">
-                                    <strong>🔍 Enable No-Change Detection</strong>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="monitor_only" name="monitor_only" 
+                                       {% if config.auto_stop.monitor_only %}checked{% endif %}>
+                                <label class="form-check-label" for="monitor_only">
+                                    <strong>🔍 Monitor-Only Mode</strong>
                                 </label>
-                                <div class="form-text">
-                                    Stop pods if CPU/GPU/Memory metrics remain <strong>completely unchanged</strong> for the full 
-                                    <strong>{{ config.auto_stop.thresholds.duration }}s</strong> duration (sampled every 60 seconds)
-                                </div>
                             </div>
                         </div>
                     </div>
                     
-                    <div class="alert alert-info" role="alert">
-                        <small>
-                            <strong>How it works:</strong> Compares metrics at {{ (config.auto_stop.thresholds.duration // 60) }}-minute intervals. 
-                            If CPU%, GPU%, and Memory% values are identical across all {{ (config.auto_stop.thresholds.duration // 60) }} data points, 
-                            the pod is considered completely idle and will be stopped.
+                    <div class="alert alert-light mb-4">
+                        <small class="text-muted">
+                            <strong>Monitor-Only:</strong> Track and alert about pods that meet stop criteria without actually stopping them.
                         </small>
                     </div>
-                    
-                    <div class="d-grid mb-4">
+
+                    <!-- Thresholds -->
+                    <h6 class="mb-3">📊 Usage Thresholds</h6>
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <label for="max_cpu" class="form-label">CPU % (≤)</label>
+                            <input type="number" class="form-control" id="max_cpu" name="max_cpu" 
+                                   value="{{ config.auto_stop.thresholds.max_cpu_percent }}" min="0" max="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="max_gpu" class="form-label">GPU % (≤)</label>
+                            <input type="number" class="form-control" id="max_gpu" name="max_gpu" 
+                                   value="{{ config.auto_stop.thresholds.max_gpu_percent }}" min="0" max="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="max_memory" class="form-label">Memory % (≤)</label>
+                            <input type="number" class="form-control" id="max_memory" name="max_memory" 
+                                   value="{{ config.auto_stop.thresholds.max_memory_percent }}" min="0" max="100">
+                        </div>
+                    </div>
+
+                    <!-- Duration -->
+                    <h6 class="mb-3">⏱️ Duration</h6>
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="duration" class="form-label">Persistent Duration (seconds)</label>
+                            <input type="number" class="form-control" id="duration" name="duration" 
+                                   value="{{ config.auto_stop.thresholds.duration }}" min="60"
+                                   oninput="updateDurationDisplay(this.value)">
+                            <div class="form-text">How long ALL thresholds must be met continuously</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mt-4 pt-2">
+                                <span class="badge bg-info" id="duration-display">
+                                    {{ (config.auto_stop.thresholds.duration // 60) }} minutes
+                                    {% if (config.auto_stop.thresholds.duration // 3600) > 0 %}
+                                        ({{ (config.auto_stop.thresholds.duration // 3600) }}h {{ ((config.auto_stop.thresholds.duration % 3600) // 60) }}m)
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg">
                             💾 Save Settings
                         </button>
                     </div>
-                </form>
-                
-                <hr class="my-4">
-
-                <!-- Sampling Information (Read-only) -->
-                <div class="alert alert-info">
-                    <h6 class="mb-2">📊 Data Collection Settings</h6>
-                    <p class="mb-2">Metrics are automatically collected every <strong>60 seconds</strong></p>
-                    <ul class="mb-0">
-                        <li>Data sampling frequency: <strong>60 seconds</strong> (fixed)</li>
-                        <li>Rolling window: <strong>{{ config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600 }}s</strong> 
-                            ({{ ((config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600) // 60) }} minutes of history)</li>
-                        <li>Data points per day: <strong>{{ 24 * 60 }}</strong> (one per minute)</li>
-                    </ul>
                 </div>
-                
-                <div id="config-result" class="mt-3"></div>
             </div>
-        </div>
+            
+            <!-- Advanced Settings Collapsible -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <button class="btn btn-link text-decoration-none p-0 text-start w-100" type="button" 
+                                data-bs-toggle="collapse" data-bs-target="#advancedSettings" 
+                                aria-expanded="false" aria-controls="advancedSettings">
+                            <span class="float-end">▼</span>
+                            🔍 Advanced: No-Change Detection
+                        </button>
+                    </h6>
+                </div>
+                <div id="advancedSettings" class="collapse">
+                    <div class="card-body">
+                        <div class="alert alert-warning mb-3">
+                            <small><strong>Alternative detection:</strong> Stop pods if metrics don't change at all (complete inactivity)</small>
+                        </div>
+                        
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="detect_no_change" name="detect_no_change" 
+                                   {% if config.auto_stop.thresholds.detect_no_change %}checked{% endif %}>
+                            <label class="form-check-label" for="detect_no_change">
+                                <strong>Enable No-Change Detection</strong>
+                            </label>
+                        </div>
+                        
+                        <div class="alert alert-danger">
+                            <strong>⚠️ Warning:</strong> May stop pods with sustained workloads (training, rendering) if metrics don't vary.
+                        </div>
+                    </div>
+                </div>
+            </div>
+                    
+        </form>
+        
+        <div id="config-result" class="mt-3"></div>
     </div>
 
     <div class="col-lg-4">
-        <div class="card">
+        <!-- Status Overview -->
+        <div class="card mb-3">
             <div class="card-header">
-                <h5 class="mb-0">📋 Current Settings</h5>
+                <h6 class="mb-0">📊 Current Status</h6>
             </div>
-            <div class="card-body" id="current-settings">
-                <h6>Auto-Stop Status</h6>
-                <p>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Auto-Stop:</span>
                     {% if config.auto_stop.enabled %}
                         <span class="badge bg-success">✅ Enabled</span>
                     {% else %}
-                        <span class="badge bg-danger">❌ Disabled</span>
+                        <span class="badge bg-secondary">❌ Disabled</span>
                     {% endif %}
-                </p>
-
-                <h6>Thresholds</h6>
-                <ul class="list-unstyled">
-                    <li><strong>CPU:</strong> ≤ {{ config.auto_stop.thresholds.max_cpu_percent }}%</li>
-                    <li><strong>GPU:</strong> ≤ {{ config.auto_stop.thresholds.max_gpu_percent }}%</li>
-                    <li><strong>Memory:</strong> ≤ {{ config.auto_stop.thresholds.max_memory_percent }}%</li>
-                    <li><strong>Duration:</strong> {{ config.auto_stop.thresholds.duration }}s 
-                        <small class="text-muted">
-                            ({{ (config.auto_stop.thresholds.duration // 60) }} min
-                            {% if (config.auto_stop.thresholds.duration // 3600) > 0 %}
-                                / {{ (config.auto_stop.thresholds.duration // 3600) }}h {{ ((config.auto_stop.thresholds.duration % 3600) // 60) }}m
-                            {% endif %})
-                        </small>
-                    </li>
-                </ul>
-
-                <h6>Monitoring Intervals</h6>
-                <ul class="list-unstyled">
-                    {% set sampling_freq = config.auto_stop.sampling.frequency if config.auto_stop.sampling else 60 %}
-                    {% set rolling_window = config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600 %}
-                    <li><strong>📊 Data Sampling & Auto-Stop Check:</strong> {{ sampling_freq }}s 
-                        <small class="text-muted">({{ (sampling_freq // 60) }} min - unified frequency)</small>
-                    </li>
-                    <li><strong>💾 Rolling Window:</strong> {{ rolling_window }}s 
-                        <small class="text-muted">({{ (rolling_window // 60) }} min)</small>
-                    </li>
-                </ul>
-                
-                <h6>Detection Features</h6>
-                <ul class="list-unstyled">
-                    <li><strong>🔍 No-Change Detection:</strong> 
-                        {% if config.auto_stop.thresholds.detect_no_change %}
-                            <span class="badge bg-success">✅ Enabled</span>
-                        {% else %}
-                            <span class="badge bg-secondary">❌ Disabled</span>
-                        {% endif %}
-                    </li>
-                </ul>
-                
-                <div class="alert alert-info" role="alert">
-                    <small>
-                        📊 <strong>Current Collection Rate</strong><br>
-                        {% set sampling_freq = config.auto_stop.sampling.frequency if config.auto_stop.sampling else 60 %}
-                        {% set rolling_window = config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600 %}
-                        At {{ sampling_freq }}s intervals:
-                        <ul class="mb-0 mt-1">
-                            <li>{{ (24 * 3600) // sampling_freq }} data points per day</li>
-                            <li>{{ (rolling_window // sampling_freq) }} data points in memory</li>
-                        </ul>
-                    </small>
                 </div>
-
-                <h6>Excluded Pods</h6>
-                {% if config.auto_stop.exclude_pods %}
-                    <ul class="list-unstyled">
-                    {% for pod in config.auto_stop.exclude_pods %}
-                        <li><code>{{ pod }}</code></li>
-                    {% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="text-muted">None</p>
-                {% endif %}
+                
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Mode:</span>
+                    {% if config.auto_stop.monitor_only %}
+                        <span class="badge bg-warning">🔍 Monitor-Only</span>
+                    {% else %}
+                        <span class="badge bg-primary">⚡ Active</span>
+                    {% endif %}
+                </div>
+                
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>No-Change:</span>
+                    {% if config.auto_stop.thresholds.detect_no_change %}
+                        <span class="badge bg-success">✅ On</span>
+                    {% else %}
+                        <span class="badge bg-secondary">❌ Off</span>
+                    {% endif %}
+                </div>
             </div>
         </div>
-
-        <div class="card mt-3">
+        
+        <!-- Current Settings -->
+        <div class="card mb-3">
             <div class="card-header">
-                <h5 class="mb-0">💡 Tips</h5>
+                <h6 class="mb-0">⚙️ Settings</h6>
             </div>
             <div class="card-body">
-                <ul class="list-unstyled">
-                    <li>🔹 All three thresholds (CPU, GPU, Memory) must be met</li>
-                    <li>🔹 Conditions must persist for the full duration</li>
-                    <li>🔹 Only running pods are monitored</li>
-                    <li>🔹 Use exclude list to protect critical pods</li>
-                    <li>🔹 Lower check intervals = more responsive but more API calls</li>
-                </ul>
+                <div class="row text-center mb-3">
+                    <div class="col-4">
+                        <div class="fw-bold">{{ config.auto_stop.thresholds.max_cpu_percent }}%</div>
+                        <small class="text-muted">CPU</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold">{{ config.auto_stop.thresholds.max_gpu_percent }}%</div>
+                        <small class="text-muted">GPU</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="fw-bold">{{ config.auto_stop.thresholds.max_memory_percent }}%</div>
+                        <small class="text-muted">Memory</small>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <div class="fw-bold">{{ (config.auto_stop.thresholds.duration // 60) }} minutes</div>
+                    <small class="text-muted">Duration</small>
+                </div>
             </div>
         </div>
+        
+        <!-- Data Collection Info -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">📊 Data Collection</h6>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    • Every 60 seconds<br>
+                    • {{ (24 * 60) }} points/day<br>
+                    • {{ ((config.auto_stop.sampling.rolling_window if config.auto_stop.sampling else 3600) // 60) }} min history
+                </small>
+            </div>
+        </div>
+        
+        <!-- Excluded Pods -->
+        {% if config.auto_stop.exclude_pods %}
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">🛡️ Excluded Pods</h6>
+            </div>
+            <div class="card-body">
+                {% for pod in config.auto_stop.exclude_pods %}
+                    <span class="badge bg-secondary me-1 mb-1">{{ pod[:8] }}...</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -256,9 +246,9 @@ function updateDurationDisplay(seconds) {
     const hours = Math.floor(seconds / 3600);
     const remainingMinutes = Math.floor((seconds % 3600) / 60);
     
-    let display = `= ${minutes} minutes`;
+    let display = `${minutes} minutes`;
     if (hours > 0) {
-        display += ` (${hours} hours ${remainingMinutes} minutes)`;
+        display = `${hours}h ${remainingMinutes}m`;
     }
     
     document.getElementById('duration-display').innerHTML = display;
