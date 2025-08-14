@@ -167,29 +167,77 @@ async def stop_pod_endpoint(pod_id: str, request: Request):
 @app.post("/pods/{pod_id}/resume")
 async def resume_pod_endpoint(pod_id: str, request: Request):
     """Resume a specific pod."""
+    # Get pod info first to provide better error context
+    pods = fetch_pods()
+    pod_name = "Unknown Pod"
+    is_cpu_pod = False
+    
+    if pods:
+        for pod in pods:
+            if pod['id'] == pod_id:
+                pod_name = pod['name']
+                # Check if it's a CPU pod (no GPUs)
+                runtime = pod.get('runtime')
+                is_cpu_pod = not runtime or not runtime.get('gpus', [])
+                break
+    
     result = resume_pod(pod_id)
     
     if result:
         if result.get('success'):
             # REST API response
-            status = "success" if result['success'] else "error"
-            message = result['message']
+            if result['success']:
+                status = "success"
+                message = f"✅ Pod '{pod_name}' resumed successfully"
+            else:
+                status = "warning"
+                error_msg = result.get('message', 'Unknown error')
+                
+                # Enhanced error handling with specific guidance
+                if 'vCPU' in error_msg or 'CPU' in error_msg:
+                    message = f"""
+                        <strong>⚠️ Resume Failed: '{pod_name}'</strong><br>
+                        <small><strong>Issue:</strong> {error_msg}</small><br>
+                        <small><strong>💡 Solution:</strong> CPU pods often fail due to no available vCPUs. Please resume manually via 
+                        <a href="https://console.runpod.io" target="_blank" class="alert-link">RunPod Console</a> to select different resources.</small>
+                    """
+                else:
+                    message = f"""
+                        <strong>❌ Resume Failed: '{pod_name}'</strong><br>
+                        <small><strong>Issue:</strong> {error_msg}</small><br>
+                        <small><strong>💡 Recommendation:</strong> Try resuming manually via 
+                        <a href="https://console.runpod.io" target="_blank" class="alert-link">RunPod Console</a> for better control.</small>
+                    """
+                    
         elif result.get('podResume'):
             # GraphQL response
             status = "success"
-            message = f"Pod resumed successfully. New status: {result['podResume'].get('desiredStatus', 'Unknown')}"
+            message = f"✅ Pod '{pod_name}' resumed successfully. Status: {result['podResume'].get('desiredStatus', 'Unknown')}"
         else:
-            status = "error"
-            message = "Failed to resume pod"
+            status = "warning"
+            message = f"""
+                <strong>❌ Resume Failed: '{pod_name}'</strong><br>
+                <small><strong>Issue:</strong> Unknown resume error occurred</small><br>
+                <small><strong>💡 Recommendation:</strong> Please resume manually via 
+                <a href="https://console.runpod.io" target="_blank" class="alert-link">RunPod Console</a> for better error details.</small>
+            """
     else:
-        status = "error"
-        message = "Failed to resume pod"
+        status = "warning"
+        pod_type = "CPU pod" if is_cpu_pod else "GPU pod"
+        message = f"""
+            <strong>❌ Resume Failed: '{pod_name}' ({pod_type})</strong><br>
+            <small><strong>Issue:</strong> Resume request failed or timed out</small><br>
+            <small><strong>💡 Recommendation:</strong> Please resume manually via 
+            <a href="https://console.runpod.io" target="_blank" class="alert-link">RunPod Console</a> for better control.</small>
+        """
     
+    # Return persistent warning that doesn't auto-dismiss
     return HTMLResponse(f'''
-        <div class="alert alert-{status}" role="alert">
+        <div class="alert alert-{status} alert-dismissible" role="alert">
             {message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-        <div hx-get="/pods" hx-target="#pods-container" hx-trigger="load delay:2s" hx-swap="innerHTML"></div>
+        <div hx-get="/pods" hx-target="#pods-container" hx-trigger="load delay:3s" hx-swap="innerHTML"></div>
     ''')
 
 @app.get("/config")
