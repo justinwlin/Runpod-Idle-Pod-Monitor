@@ -90,15 +90,19 @@ def simple_monitoring_loop():
                             smart_window = max(3600, int(duration * 1.5))  # min 1 hour, or duration * 1.5
                             main_data_tracker.apply_rolling_window(pod_id, smart_window)
                             
-                            # Check auto-stop conditions if enabled
-                            if config.get('auto_stop', {}).get('enabled', False):
-                                thresholds = config.get('auto_stop', {}).get('thresholds', {})
-                                monitor_only = config.get('auto_stop', {}).get('monitor_only', False)
+                            # Check auto-stop conditions if monitoring is active
+                            auto_stop_config = config.get('auto_stop', {})
+                            enabled = auto_stop_config.get('enabled', False)
+                            monitor_only = auto_stop_config.get('monitor_only', False)
+                            
+                            # Monitor if either enabled OR monitor_only is true
+                            if enabled or monitor_only:
+                                thresholds = auto_stop_config.get('thresholds', {})
                                 
                                 if main_data_tracker.check_auto_stop_conditions(pod_id, thresholds, exclude_pods):
                                     if monitor_only:
                                         print(f"   🔍 MONITOR-ONLY: Pod '{pod_name}' ({pod_id}) meets auto-stop conditions (would be stopped)")
-                                    else:
+                                    elif enabled:
                                         print(f"   ⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
                                         
                                         from runpod_monitor.main import stop_pod

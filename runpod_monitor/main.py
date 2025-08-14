@@ -518,16 +518,23 @@ def monitor_pods():
                             print(f"  📊 {pod_name}: CPU={cpu}%, GPU={gpu_util:.1f}%, Memory={memory}% (Δ={change_rate['total_change']:.1f}% over {config['auto_stop']['thresholds']['duration']//60}min)")
                             
                             # Check auto-stop conditions immediately after data collection
-                            if config['auto_stop']['enabled'] and should_monitor_pod(pod):
-                                exclude_list = config.get('auto_stop', {}).get('exclude_pods', [])
-                                if data_tracker.check_auto_stop_conditions(pod_id, config['auto_stop']['thresholds'], exclude_list):
-                                    print(f"⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
-                                    
-                                    result = stop_pod(pod_id)
-                                    if result and result.get('podStop'):
-                                        print(f"✓ Pod '{pod_name}' stopped successfully")
-                                    else:
-                                        print(f"✗ Failed to stop pod '{pod_name}'")
+                            auto_stop_config = config.get('auto_stop', {})
+                            enabled = auto_stop_config.get('enabled', False)
+                            monitor_only = auto_stop_config.get('monitor_only', False)
+                            
+                            if (enabled or monitor_only) and should_monitor_pod(pod):
+                                exclude_list = auto_stop_config.get('exclude_pods', [])
+                                if data_tracker.check_auto_stop_conditions(pod_id, auto_stop_config.get('thresholds', {}), exclude_list):
+                                    if monitor_only:
+                                        print(f"🔍 MONITOR-ONLY: Pod '{pod_name}' ({pod_id}) meets auto-stop conditions (would be stopped)")
+                                    elif enabled:
+                                        print(f"⚠️  Pod '{pod_name}' ({pod_id}) meets auto-stop conditions. Stopping...")
+                                        
+                                        result = stop_pod(pod_id)
+                                        if result and result.get('podStop'):
+                                            print(f"✓ Pod '{pod_name}' stopped successfully")
+                                        else:
+                                            print(f"✗ Failed to stop pod '{pod_name}'")
                         else:
                             print(f"  ⏸️  {pod_name} ({status})")
                 else:

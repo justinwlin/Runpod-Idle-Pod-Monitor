@@ -53,10 +53,24 @@
                         </div>
                     </div>
                     
-                    <div class="alert alert-light mb-4">
-                        <small class="text-muted">
-                            <strong>Monitor-Only:</strong> Track and alert about pods that meet stop criteria without actually stopping them.
-                        </small>
+                    <!-- Dynamic Status Info -->
+                    <div class="alert mb-4" id="status-info-card">
+                        {% if config.auto_stop.enabled %}
+                            <div class="alert-danger">
+                                <strong>⚡ Auto-Stop Active</strong><br>
+                                <small>Pods will be monitored and <strong>automatically stopped</strong> when they meet stop criteria ({{ config.auto_stop.thresholds.max_cpu_percent }}% CPU, {{ config.auto_stop.thresholds.max_gpu_percent }}% GPU, {{ config.auto_stop.thresholds.max_memory_percent }}% Memory for {{ (config.auto_stop.thresholds.duration // 60) }} minutes).</small>
+                            </div>
+                        {% elif config.auto_stop.monitor_only %}
+                            <div class="alert-warning">
+                                <strong>🔍 Monitor-Only Mode Active</strong><br>
+                                <small>Pods will be tracked and alerts shown when they meet stop criteria ({{ config.auto_stop.thresholds.max_cpu_percent }}% CPU, {{ config.auto_stop.thresholds.max_gpu_percent }}% GPU, {{ config.auto_stop.thresholds.max_memory_percent }}% Memory for {{ (config.auto_stop.thresholds.duration // 60) }} minutes), but <strong>no pods will be automatically stopped</strong>.</small>
+                            </div>
+                        {% else %}
+                            <div class="alert-secondary">
+                                <strong>💤 All Monitoring Disabled</strong><br>
+                                <small>No pod monitoring, alerts, or automatic actions will occur.</small>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <!-- Thresholds -->
@@ -154,7 +168,7 @@
             <div class="card-header">
                 <h6 class="mb-0">📊 Current Status</h6>
             </div>
-            <div class="card-body">
+            <div class="card-body" id="status-overview">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span>Auto-Stop:</span>
                     {% if config.auto_stop.enabled %}
@@ -165,11 +179,11 @@
                 </div>
                 
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>Mode:</span>
+                    <span>Monitor-Only:</span>
                     {% if config.auto_stop.monitor_only %}
-                        <span class="badge bg-warning">🔍 Monitor-Only</span>
+                        <span class="badge bg-warning">🔍 On</span>
                     {% else %}
-                        <span class="badge bg-primary">⚡ Active</span>
+                        <span class="badge bg-secondary">❌ Off</span>
                     {% endif %}
                 </div>
                 
@@ -402,6 +416,60 @@ document.addEventListener('htmx:afterSwap', function(evt) {
     }
 });
 
+// Setup toggle logic for mutually exclusive behavior
+function setupToggleLogic() {
+    const enabledCheckbox = document.getElementById('enabled');
+    const monitorOnlyCheckbox = document.getElementById('monitor_only');
+    
+    // Make them mutually exclusive
+    enabledCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            monitorOnlyCheckbox.checked = false;
+        }
+        updateStatusCard();
+    });
+    
+    monitorOnlyCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            enabledCheckbox.checked = false;
+        }
+        updateStatusCard();
+    });
+    
+    function updateStatusCard() {
+        const enabled = enabledCheckbox.checked;
+        const monitorOnly = monitorOnlyCheckbox.checked;
+        const statusCard = document.getElementById('status-info-card');
+        
+        let content = '';
+        
+        if (enabled) {
+            content = `
+                <div class="alert-danger">
+                    <strong>⚡ Auto-Stop Active</strong><br>
+                    <small>Pods will be monitored and <strong>automatically stopped</strong> when they meet stop criteria.</small>
+                </div>
+            `;
+        } else if (monitorOnly) {
+            content = `
+                <div class="alert-warning">
+                    <strong>🔍 Monitor-Only Mode Active</strong><br>
+                    <small>Pods will be tracked and alerts shown when they meet stop criteria, but <strong>no pods will be automatically stopped</strong>.</small>
+                </div>
+            `;
+        } else {
+            content = `
+                <div class="alert-secondary">
+                    <strong>💤 All Monitoring Disabled</strong><br>
+                    <small>No pod monitoring, alerts, or automatic actions will occur.</small>
+                </div>
+            `;
+        }
+        
+        statusCard.innerHTML = content;
+    }
+}
+
 // Initialize tracking when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Debug checkbox states on page load
@@ -419,6 +487,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('  - Monitor-Only Mode: true (checked)');
     
     trackFormChanges();
+    setupToggleLogic();
 });
 </script>
 {% endblock %}

@@ -72,13 +72,13 @@ def start_monitoring_background():
             monitoring_thread.start()
             auto_stop_enabled = config.get('auto_stop', {}).get('enabled', False)
             monitor_only = config.get('auto_stop', {}).get('monitor_only', False)
-            if auto_stop_enabled:
-                if monitor_only:
-                    print("✅ Background monitoring started (Monitor-Only mode)")
-                else:
-                    print("✅ Background monitoring started (Auto-Stop active)")
+            
+            if monitor_only:
+                print("✅ Background monitoring started (Monitor-Only mode)")
+            elif auto_stop_enabled:
+                print("✅ Background monitoring started (Auto-Stop active)")
             else:
-                print("✅ Background data collection started (Auto-Stop disabled)")
+                print("✅ Background data collection started (Monitoring disabled)")
         else:
             print("ℹ️  Monitoring already running")
     else:
@@ -266,27 +266,46 @@ async def update_auto_stop(
     else:
         status_msg = "⚠️  Configuration updated in memory but failed to save to file"
     
-    # Start or stop monitoring based on enabled state
-    if enabled:
+    # Start or stop monitoring based on enabled OR monitor_only state
+    if enabled or monitor_only:
         start_monitoring_background()
-        monitoring_status = "🔄 Data collection started automatically"
+        if monitor_only:
+            monitoring_status = "🔍 Monitor-only data collection active"
+        else:
+            monitoring_status = "⚡ Auto-stop data collection active"
     else:
         stop_monitoring_background()
         monitoring_status = "⏸️ Data collection stopped"
     
-    # Render the current settings partial with updated config
-    current_settings_html = templates.get_template("current_settings.html").render({"config": current_config})
+    # Render the status overview with updated config
+    status_overview_html = f'''
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Auto-Stop:</span>
+            {'<span class="badge bg-success">✅ Enabled</span>' if enabled else '<span class="badge bg-secondary">❌ Disabled</span>'}
+        </div>
+        
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Monitor-Only:</span>
+            {'<span class="badge bg-warning">🔍 On</span>' if monitor_only else '<span class="badge bg-secondary">❌ Off</span>'}
+        </div>
+        
+        <div class="d-flex justify-content-between align-items-center">
+            <span>No-Change:</span>
+            {'<span class="badge bg-success">✅ On</span>' if detect_no_change else '<span class="badge bg-secondary">❌ Off</span>'}
+        </div>
+    '''
     
-    # Return both the success message and updated current settings using hx-swap-oob
+    # Return both the success message and updated status overview using hx-swap-oob
     return HTMLResponse(f'''
         <div class="alert alert-success" role="alert">
             {status_msg}<br>
             <small>Auto-stop {'enabled' if enabled else 'disabled'}, persistent duration: {duration}s ({duration//60} minutes)</small><br>
+            <small>Monitor-only {'enabled' if monitor_only else 'disabled'}</small><br>
             <small>No-change detection {'enabled' if detect_no_change else 'disabled'}</small><br>
             <small>{monitoring_status}</small>
         </div>
-        <div id="current-settings" hx-swap-oob="innerHTML">
-            {current_settings_html}
+        <div id="status-overview" hx-swap-oob="innerHTML">
+            {status_overview_html}
         </div>
     ''')
 

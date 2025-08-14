@@ -238,6 +238,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Chart functionality
 let metricsChart = null;
+let chartRefreshInterval = null;
+
+// Auto-refresh functions
+function startChartRefresh() {
+    // Clear any existing interval
+    if (chartRefreshInterval) {
+        clearInterval(chartRefreshInterval);
+    }
+    
+    // Start refreshing every 15 seconds (matching table refresh)
+    chartRefreshInterval = setInterval(() => {
+        const graphContainer = document.getElementById('graph-view-container');
+        const allContainer = document.getElementById('all-charts-container');
+        
+        if (graphContainer.style.display === 'block') {
+            if (allContainer.style.display === 'block') {
+                // Refresh all pods charts
+                console.log('Auto-refreshing all pods charts...');
+                showAllPods();
+            } else {
+                // Refresh single pod chart
+                const podSelector = document.getElementById('pod-selector');
+                const timeRange = document.getElementById('time-range').value;
+                if (podSelector.value) {
+                    console.log(`Auto-refreshing chart for pod: ${podSelector.value}`);
+                    loadChartData(podSelector.value, timeRange);
+                }
+            }
+        }
+    }, 15000); // 15 seconds
+}
+
+function stopChartRefresh() {
+    if (chartRefreshInterval) {
+        clearInterval(chartRefreshInterval);
+        chartRefreshInterval = null;
+        console.log('Chart auto-refresh stopped');
+    }
+}
 
 // Toggle between table and graph view
 document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
@@ -248,10 +287,12 @@ document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
         if (this.id === 'tableView') {
             tableContainer.style.display = 'block';
             graphContainer.style.display = 'none';
+            stopChartRefresh(); // Stop chart refresh when switching to table
         } else {
             tableContainer.style.display = 'none';
             graphContainer.style.display = 'block';
             loadPodOptions();
+            startChartRefresh(); // Start chart refresh when switching to graph
         }
     });
 });
@@ -559,6 +600,11 @@ document.getElementById('pod-selector').addEventListener('change', function() {
         showSingleChart();
         const timeRange = document.getElementById('time-range').value;
         loadChartData(this.value, timeRange);
+        // Ensure auto-refresh is active for single chart
+        const graphView = document.getElementById('graphView');
+        if (graphView.checked) {
+            startChartRefresh();
+        }
     }
 });
 
@@ -586,6 +632,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Clear single pod selection
             document.getElementById('pod-selector').value = '';
             showAllPods();
+            // Ensure auto-refresh is active for all pods view
+            startChartRefresh();
         });
     } else {
         console.error('Show All Pods button not found!');

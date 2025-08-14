@@ -1,4 +1,40 @@
 {% if pods %}
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center">
+            <div class="card-body">
+                <h5 class="card-title">📦 {{ pods | length }}</h5>
+                <p class="card-text">Total Pods</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+            <div class="card-body">
+                <h5 class="card-title">✅ {{ pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | list | length }}</h5>
+                <p class="card-text">Running</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
+            <div class="card-body">
+                <h5 class="card-title">⏸️ {{ pods | selectattr('desiredStatus', 'equalto', 'EXITED') | list | length }}</h5>
+                <p class="card-text">Stopped</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <div class="card-body">
+                <h5 class="card-title">💰 ${{ "%.2f"|format(pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | map(attribute='costPerHr') | sum) }}</h5>
+                <p class="card-text">Cost/Hour</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="table-responsive" id="pod-table">
     <table class="table table-hover pod-table">
         <thead>
@@ -139,42 +175,6 @@
         {% endfor %}
         </tbody>
     </table>
-</div>
-
-<!-- Summary Cards -->
-<div class="row mt-4">
-    <div class="col-md-3 mb-3">
-        <div class="card summary-card text-center">
-            <div class="card-body">
-                <h5 class="card-title">📦 {{ pods | length }}</h5>
-                <p class="card-text">Total Pods</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-            <div class="card-body">
-                <h5 class="card-title">✅ {{ pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | list | length }}</h5>
-                <p class="card-text">Running</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
-            <div class="card-body">
-                <h5 class="card-title">⏸️ {{ pods | selectattr('desiredStatus', 'equalto', 'EXITED') | list | length }}</h5>
-                <p class="card-text">Stopped</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 mb-3">
-        <div class="card summary-card text-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-            <div class="card-body">
-                <h5 class="card-title">💰 ${{ "%.2f"|format(pods | selectattr('desiredStatus', 'equalto', 'RUNNING') | map(attribute='costPerHr') | sum) }}</h5>
-                <p class="card-text">Cost/Hour</p>
-            </div>
-        </div>
-    </div>
 </div>
 
 {% else %}
