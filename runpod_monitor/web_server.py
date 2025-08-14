@@ -195,6 +195,9 @@ async def resume_pod_endpoint(pod_id: str, request: Request):
 @app.get("/config")
 async def get_config(request: Request):
     """Get current configuration."""
+    # Reload config from file to ensure we have latest values
+    load_config(config_path)
+    
     try:
         from .main import config as current_config
     except ImportError:
