@@ -196,12 +196,24 @@ async def resume_pod_endpoint(pod_id: str, request: Request):
 async def get_config(request: Request):
     """Get current configuration."""
     # Reload config from file to ensure we have latest values
+    print(f"🔄 Config page: Reloading config from {config_path}")
     load_config(config_path)
     
     try:
         from .main import config as current_config
     except ImportError:
         from main import config as current_config
+    
+    # Debug config values
+    if current_config:
+        auto_stop = current_config.get('auto_stop', {})
+        enabled = auto_stop.get('enabled')
+        monitor_only = auto_stop.get('monitor_only')
+        print(f"📋 Config values: enabled={enabled}, monitor_only={monitor_only}")
+        print(f"📋 Template will set: enabled checkbox={enabled}, monitor_only checkbox={monitor_only}")
+        print(f"📋 Full auto_stop config: {auto_stop}")
+    else:
+        print("❌ No config loaded!")
     
     # Get current pods to identify orphaned excluded pods
     current_pods = fetch_pods()
@@ -210,11 +222,17 @@ async def get_config(request: Request):
     excluded_pods = current_config.get('auto_stop', {}).get('exclude_pods', []) if current_config else []
     orphaned_excluded = [pod_id for pod_id in excluded_pods if pod_id not in current_pod_ids]
     
-    return templates.TemplateResponse("config.html", {
+    # Debug what's actually being passed to template
+    template_data = {
         "request": request, 
         "config": current_config,
         "orphaned_excluded_pods": orphaned_excluded
-    })
+    }
+    
+    print(f"📋 Passing to template: config.auto_stop.monitor_only = {current_config.get('auto_stop', {}).get('monitor_only') if current_config else 'NO_CONFIG'}")
+    print(f"📋 Template data keys: {list(template_data.keys())}")
+    
+    return templates.TemplateResponse("config.html", template_data)
 
 @app.post("/config/auto-stop")
 async def update_auto_stop(

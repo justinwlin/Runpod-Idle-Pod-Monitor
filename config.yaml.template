@@ -4,15 +4,15 @@ api:
   rest_url: https://rest.runpod.io/v1
 auto_stop:
   enabled: false
-  monitor_only: false
+  monitor_only: true
   sampling:
     frequency: 60
     rolling_window: 3600
   thresholds:
     max_cpu_percent: 1
-    max_gpu_percent: 0
-    max_memory_percent: 20
-    duration: 1800
+    max_gpu_percent: 1
+    max_memory_percent: 1
+    duration: 3600
     detect_no_change: false
   exclude_pods: []
   include_pods: []

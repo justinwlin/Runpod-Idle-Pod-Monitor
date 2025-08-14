@@ -41,9 +41,11 @@
                             </div>
                         </div>
                         <div class="col-md-6">
+                            <!-- DEBUG: Template values -->
+                            <!-- config.auto_stop.monitor_only = {{ config.auto_stop.monitor_only if config and config.auto_stop else 'UNDEFINED' }} -->
                             <div class="form-check form-switch mb-3">
                                 <input class="form-check-input" type="checkbox" id="monitor_only" name="monitor_only" 
-                                       {% if config.auto_stop.monitor_only %}checked{% endif %}>
+                                       {% if config and config.auto_stop and config.auto_stop.monitor_only %}checked{% endif %}>
                                 <label class="form-check-label" for="monitor_only">
                                     <strong>🔍 Monitor-Only Mode</strong>
                                 </label>
@@ -401,6 +403,22 @@ document.addEventListener('htmx:afterSwap', function(evt) {
 });
 
 // Initialize tracking when page loads
-document.addEventListener('DOMContentLoaded', trackFormChanges);
+document.addEventListener('DOMContentLoaded', function() {
+    // Debug checkbox states on page load
+    const enabledCheckbox = document.getElementById('enabled');
+    const monitorOnlyCheckbox = document.getElementById('monitor_only');
+    
+    console.log('🔄 Config page loaded');
+    console.log('📋 Initial checkbox states:');
+    console.log(`  - Enable Auto-Stop: ${enabledCheckbox.checked}`);
+    console.log(`  - Monitor-Only Mode: ${monitorOnlyCheckbox.checked}`);
+    
+    // Check if template values match expectations
+    console.log('📋 Expected from config:');
+    console.log('  - Enable Auto-Stop: false (unchecked)');
+    console.log('  - Monitor-Only Mode: true (checked)');
+    
+    trackFormChanges();
+});
 </script>
 {% endblock %}

@@ -76,7 +76,7 @@ def load_config(config_path: str = "config.yaml"):
     return config
 
 def create_default_config():
-    """Create default configuration with better thresholds."""
+    """Create default configuration with monitor-only defaults."""
     return {
         "api": {
             "key": os.getenv("RUNPOD_API_KEY", "YOUR_RUNPOD_API_KEY_HERE"),
@@ -85,15 +85,16 @@ def create_default_config():
         },
         "auto_stop": {
             "enabled": False,
+            "monitor_only": True,
             "sampling": {
                 "frequency": 60,
                 "rolling_window": 3600
             },
             "thresholds": {
                 "max_cpu_percent": 1,
-                "max_gpu_percent": 0,
-                "max_memory_percent": 20,
-                "duration": 1800,
+                "max_gpu_percent": 1,
+                "max_memory_percent": 1,
+                "duration": 3600,
                 "detect_no_change": False
             },
             "exclude_pods": [],
