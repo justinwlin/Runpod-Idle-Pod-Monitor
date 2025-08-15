@@ -1,13 +1,31 @@
 # RunPod Monitor Dockerfile
 FROM python:3.13-slim
 
-# Install system dependencies
+# Install system dependencies (including tmux for copyparty and SSH)
 RUN apt-get update && apt-get install -y \
     curl \
+    tmux \
+    ca-certificates \
+    openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Install UV
 RUN pip install uv
+
+# Install UV for root user globally and pre-install copyparty
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    /root/.local/bin/uv tool install copyparty
+
+# Add UV tools to PATH
+ENV PATH="/root/.local/bin:$PATH"
+
+# Configure SSH
+RUN mkdir -p /var/run/sshd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Set default SSH password (can be overridden via environment variable)
+ENV SSH_PASSWORD=runpod123
 
 WORKDIR /app
 
@@ -31,7 +49,7 @@ ENV DATA_DIR=/workspace/data
 ENV CONFIG_DIR=/workspace/config
 
 # Expose ports
-EXPOSE 8080
+EXPOSE 8080 8000 22
 
 # Health check for main app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
