@@ -62,15 +62,15 @@
                     <div class="col-md-2">
                         <div class="card border-0">
                             <div class="card-body">
-                                <h4 class="text-primary">{{ summaries | length }}</h4>
-                                <p class="card-text">Monitored Pods</p>
+                                <h4 class="text-primary">{{ total_active_pods }}</h4>
+                                <p class="card-text">Active Pods</p>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-2">
                         <div class="card border-0">
                             <div class="card-body">
-                                <h4 class="text-success">{{ summaries | selectattr('status', 'equalto', 'RUNNING') | list | length }}</h4>
+                                <h4 class="text-success">{{ running_pods_count }}</h4>
                                 <p class="card-text">Running</p>
                             </div>
                         </div>
@@ -781,6 +781,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     timeFilterSelect.addEventListener('change', updateTableView);
     podFilterSelect.addEventListener('change', updateTableView);
+    
+    // Simple table refresh - HTMX handles this automatically now
 });
 </script>
 

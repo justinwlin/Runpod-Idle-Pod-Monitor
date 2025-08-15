@@ -425,11 +425,8 @@ async def get_metrics(request: Request):
                 active_summaries.append(summary)
                 print(f"DEBUG: Including metrics for active pod: {summary['name']} ({summary['pod_id']})")
         
-        # Clean up data for inactive pods
-        inactive_pod_ids = set(summary['pod_id'] for summary in all_summaries) - active_pod_ids
-        for inactive_pod_id in inactive_pod_ids:
-            print(f"Cleaning up data for inactive pod: {inactive_pod_id}")
-            data_tracker.clear_pod_data(inactive_pod_id)
+        # Note: We no longer clean up "inactive" pod data here to preserve terminated pod history
+        # Data cleanup is handled by the retention policy instead
         
         summaries = active_summaries
         pods_with_metrics = len(active_summaries)
@@ -445,12 +442,12 @@ async def get_metrics(request: Request):
     except ImportError:
         from main import config as current_config
     
-    # Get excluded pods information
+    # Get excluded pods information and count running pods
     exclude_list = current_config.get('auto_stop', {}).get('exclude_pods', []) if current_config else []
     excluded_pods_info = []
+    running_pods_count = 0
     
-    if current_pods and exclude_list:
-        # Find excluded pods that still exist
+    if current_pods:
         for pod in current_pods:
             if pod['id'] in exclude_list or pod['name'] in exclude_list:
                 excluded_pods_info.append({
@@ -458,12 +455,17 @@ async def get_metrics(request: Request):
                     'name': pod['name'],
                     'status': pod.get('desiredStatus', 'Unknown')
                 })
+            
+            # Count running pods from API data
+            if pod.get('desiredStatus') == 'RUNNING':
+                running_pods_count += 1
     
     return templates.TemplateResponse("metrics.html", {
         "request": request, 
         "summaries": summaries,
         "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total_active_pods": active_pod_count,
+        "running_pods_count": running_pods_count,
         "pods_with_metrics": pods_with_metrics,
         "excluded_pods_count": len(excluded_pods_info),
         "excluded_pods": excluded_pods_info,
@@ -705,34 +707,66 @@ async def get_next_poll():
     }
 
 @app.get("/api/raw-data")
-async def get_raw_data(request: Request, pod_filter: str = None, duration: int = None):
-    """Get raw data points as HTML table with optional pod filtering."""
-    # Read directly from file instead of using data_tracker
-    all_raw_data = []
-    pod_names = set()
-    
+async def get_raw_data(request: Request, page: int = 1, status_filter: str = None):
+    """Get raw data points as HTML table with pagination and optional status filtering."""
     try:
         import json
         with open('./data/pod_metrics.json', 'r') as f:
             data = json.load(f)
-            
-        # Apply time filtering if duration is specified
-        cutoff_time = None
-        if duration:
-            cutoff_time = time.time() - duration
         
+        # Get current pods from API to determine actual status
+        current_pods = fetch_pods()
+        current_pod_ids = set()
+        current_pod_statuses = {}
+        
+        if current_pods:
+            for pod in current_pods:
+                current_pod_ids.add(pod['id'])
+                current_pod_statuses[pod['id']] = {
+                    'name': pod['name'],
+                    'status': pod.get('desiredStatus', 'UNKNOWN'),
+                    'cost_per_hr': pod.get('costPerHr', 0)
+                }
+        
+        # Process all historical data and determine real status
+        all_raw_data = []
         for pod_id, metrics_list in data.items():
-            # Apply time filter if specified
-            if cutoff_time:
-                filtered_metrics = [m for m in metrics_list if m.get('epoch', 0) >= cutoff_time]
-            else:
-                # Default: last 20 data points per pod for performance
-                filtered_metrics = metrics_list[-20:] if not duration else metrics_list
-            
-            for metric in filtered_metrics:
-                all_raw_data.append(metric)
-                if metric.get('name'):
-                    pod_names.add(metric.get('name'))
+            for metric in metrics_list:
+                # Use the STORED status from each individual data point
+                stored_status = metric.get('status', 'UNKNOWN')
+                stored_name = metric.get('name', 'Unknown')
+                stored_cost = metric.get('cost_per_hr', 0)
+                
+                # Only override if the stored data is incomplete or pod no longer exists
+                if stored_status == 'UNKNOWN' or stored_status == '':
+                    if pod_id in current_pod_ids:
+                        # Use current API data for incomplete records
+                        actual_status = current_pod_statuses[pod_id]['status']
+                        actual_name = current_pod_statuses[pod_id]['name']
+                        actual_cost = current_pod_statuses[pod_id]['cost_per_hr']
+                    else:
+                        # Pod no longer exists and no stored status
+                        actual_status = 'TERMINATED'
+                        actual_name = stored_name
+                        actual_cost = stored_cost
+                else:
+                    # Use the stored status - this preserves historical accuracy
+                    actual_status = stored_status
+                    actual_name = stored_name
+                    actual_cost = stored_cost
+                
+                # Update name/cost if pod still exists (in case name changed)
+                if pod_id in current_pod_ids and actual_status != 'TERMINATED':
+                    actual_name = current_pod_statuses[pod_id]['name']
+                    actual_cost = current_pod_statuses[pod_id]['cost_per_hr']
+                
+                # Create enhanced metric with actual status
+                enhanced_metric = metric.copy()
+                enhanced_metric['actual_status'] = actual_status
+                enhanced_metric['actual_name'] = actual_name
+                enhanced_metric['actual_cost'] = actual_cost
+                
+                all_raw_data.append(enhanced_metric)
                     
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return HTMLResponse("<p>No metrics data file found</p>")
@@ -743,55 +777,104 @@ async def get_raw_data(request: Request, pod_filter: str = None, duration: int =
     if not all_raw_data:
         return HTMLResponse("<p>No raw data points available yet</p>")
     
-    # Filter by pod if requested (pod_filter can be pod_id or pod_name)
-    if pod_filter:
-        all_raw_data = [metric for metric in all_raw_data 
-                       if metric.get('pod_id') == pod_filter or metric.get('name') == pod_filter]
+    # Apply status filter
+    if status_filter:
+        if status_filter == 'active':
+            all_raw_data = [m for m in all_raw_data if m.get('actual_status') == 'RUNNING']
+        elif status_filter == 'exited':
+            all_raw_data = [m for m in all_raw_data if m.get('actual_status') in ['STOPPED', 'EXITED']]
+        elif status_filter == 'terminated':
+            all_raw_data = [m for m in all_raw_data if m.get('actual_status') == 'TERMINATED']
     
-    # Get available pods for filter buttons (use current pods to get latest names)
-    current_pods = fetch_pods()
-    available_pods = []
-    if current_pods:
-        for pod in current_pods:
-            pod_id = pod['id']
-            pod_name = pod['name']
-            # Only include pods that have data in the file
-            try:
-                if pod_id in data and data[pod_id]:
-                    available_pods.append({'id': pod_id, 'name': pod_name})
-            except:
-                pass  # Skip if data not available
+    # Pagination settings
+    ITEMS_PER_PAGE = 50
+    total_items = len(all_raw_data)
+    total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     
-    # Sort by name for better UX
-    available_pods.sort(key=lambda x: x['name'])
+    # Ensure page is within bounds
+    page = max(1, min(page, total_pages if total_pages > 0 else 1))
     
-    # Build HTML with filter buttons and table
+    # Calculate pagination slice
+    start_idx = (page - 1) * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
+    paginated_data = all_raw_data[start_idx:end_idx]
+    
+    # Count by status for filter buttons
+    total_count = len(all_raw_data)
+    active_count = len([m for m in all_raw_data if m.get('actual_status') == 'RUNNING'])
+    exited_count = len([m for m in all_raw_data if m.get('actual_status') in ['STOPPED', 'EXITED']])
+    terminated_count = len([m for m in all_raw_data if m.get('actual_status') == 'TERMINATED'])
+    
+    # Build simple HTML with status filter buttons and pagination
     html = f'''
     <div class="mb-3">
-        <div class="btn-group flex-wrap" role="group">
-            <button type="button" class="btn btn-sm {'btn-primary' if not pod_filter else 'btn-outline-primary'}" 
-                    hx-get="/api/raw-data" hx-target="#raw-data-table" hx-swap="innerHTML">
-                All Pods ({len(all_raw_data) if not pod_filter else len([m for pod_metrics in data.values() for m in pod_metrics[-20:]])})
-            </button>
+        <div class="row">
+            <div class="col-md-8">
+                <div class="btn-group flex-wrap" role="group" aria-label="Status Filter">
+                    <button type="button" class="btn btn-sm {'btn-primary' if not status_filter else 'btn-outline-primary'}" 
+                            hx-get="/api/raw-data?page={page}" hx-target="#raw-data-table" hx-swap="innerHTML">
+                        All ({total_count})
+                    </button>
+                    <button type="button" class="btn btn-sm {'btn-success' if status_filter == 'active' else 'btn-outline-success'}" 
+                            hx-get="/api/raw-data?status_filter=active&page=1" hx-target="#raw-data-table" hx-swap="innerHTML">
+                        Active ({active_count})
+                    </button>
+                    <button type="button" class="btn btn-sm {'btn-warning' if status_filter == 'exited' else 'btn-outline-warning'}" 
+                            hx-get="/api/raw-data?status_filter=exited&page=1" hx-target="#raw-data-table" hx-swap="innerHTML">
+                        Exited ({exited_count})
+                    </button>
+                    <button type="button" class="btn btn-sm {'btn-danger' if status_filter == 'terminated' else 'btn-outline-danger'}" 
+                            hx-get="/api/raw-data?status_filter=terminated&page=1" hx-target="#raw-data-table" hx-swap="innerHTML">
+                        Terminated ({terminated_count})
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                <small class="text-muted">
+                    Showing {start_idx + 1}-{min(end_idx, total_items)} of {total_items} entries
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <small class="text-muted">Page {page} of {total_pages}</small>
+        </div>
+        <div>
+            <div class="btn-group" role="group">
     '''
     
-    for pod in available_pods:
-        pod_id = pod['id']
-        pod_name = pod['name']
-        # Count data points for this specific pod ID
-        pod_count = len([m for m in all_raw_data if m.get('pod_id') == pod_id]) if not pod_filter else len(data.get(pod_id, [])[-20:])
-        is_active = pod_filter == pod_id or pod_filter == pod_name
+    # Previous page button
+    if page > 1:
+        prev_url = f"/api/raw-data?page={page-1}"
+        if status_filter:
+            prev_url += f"&status_filter={status_filter}"
         html += f'''
-            <button type="button" class="btn btn-sm {'btn-primary' if is_active else 'btn-outline-primary'}" 
-                    hx-get="/api/raw-data?pod_filter={pod_id}" hx-target="#raw-data-table" hx-swap="innerHTML"
-                    title="Pod ID: {pod_id}">
-                {pod_name} ({pod_count})
-            </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        hx-get="{prev_url}" hx-target="#raw-data-table" hx-swap="innerHTML">
+                    « Previous
+                </button>
+        '''
+    
+    # Next page button
+    if page < total_pages:
+        next_url = f"/api/raw-data?page={page+1}"
+        if status_filter:
+            next_url += f"&status_filter={status_filter}"
+        html += f'''
+                <button type="button" class="btn btn-sm btn-outline-secondary" 
+                        hx-get="{next_url}" hx-target="#raw-data-table" hx-swap="innerHTML">
+                    Next »
+                </button>
         '''
     
     html += '''
+            </div>
         </div>
     </div>
+    
     <div class="table-responsive">
         <table class="table table-sm table-striped">
             <thead class="table-dark">
@@ -810,32 +893,46 @@ async def get_raw_data(request: Request, pod_filter: str = None, duration: int =
             <tbody>
     '''
     
-    display_data = all_raw_data[:100] if not pod_filter else all_raw_data[:50]  # Show more when filtering
-    
-    for metric in display_data:
+    # Use paginated data
+    for metric in paginated_data:
         timestamp = datetime.fromisoformat(metric.get('timestamp', '')).strftime('%H:%M:%S') if metric.get('timestamp') else 'Unknown'
         uptime_hours = metric.get('uptime_seconds', 0) // 3600
         uptime_mins = (metric.get('uptime_seconds', 0) % 3600) // 60
         
+        # Use actual status for display
+        actual_status = metric.get('actual_status', 'UNKNOWN')
+        actual_name = metric.get('actual_name', metric.get('name', 'Unknown'))
+        actual_cost = metric.get('actual_cost', metric.get('cost_per_hr', 0))
+        
+        # Set badge color based on actual status
+        if actual_status == 'RUNNING':
+            badge_color = 'success'
+        elif actual_status in ['STOPPED', 'EXITED']:
+            badge_color = 'warning'
+        elif actual_status == 'TERMINATED':
+            badge_color = 'danger'
+        else:
+            badge_color = 'secondary'
+        
         html += f'''
                 <tr>
                     <td><small>{timestamp}</small></td>
-                    <td><small>{metric.get('name', 'Unknown')}</small></td>
+                    <td><small>{actual_name}</small></td>
                     <td><small class="text-muted">{metric.get('pod_id', 'Unknown')[:8]}...</small></td>
-                    <td><span class="badge bg-{'success' if metric.get('status') == 'RUNNING' else 'warning'}">{metric.get('status', 'Unknown')}</span></td>
+                    <td><span class="badge bg-{badge_color}">{actual_status}</span></td>
                     <td>{metric.get('cpu_percent', 0)}%</td>
                     <td>{metric.get('gpu_percent', 0)}%</td>
                     <td>{metric.get('memory_percent', 0)}%</td>
                     <td><small>{uptime_hours}h {uptime_mins}m</small></td>
-                    <td><small>${metric.get('cost_per_hr', 0)}</small></td>
+                    <td><small>${actual_cost}</small></td>
                 </tr>
         '''
     
-    if not display_data:
+    if not paginated_data:
         html += '''
                 <tr>
                     <td colspan="9" class="text-center text-muted">
-                        <em>No data points found for the selected pod</em>
+                        <em>No data points found</em>
                     </td>
                 </tr>
         '''

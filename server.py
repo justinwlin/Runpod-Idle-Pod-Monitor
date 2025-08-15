@@ -7,6 +7,7 @@ Simple entry point to start the web interface with integrated monitoring.
 import uvicorn
 import threading
 import time
+from datetime import datetime
 from runpod_monitor.main import load_config, fetch_pods, data_tracker
 from runpod_monitor.web_server import app
 
@@ -36,10 +37,49 @@ def simple_monitoring_loop():
                     main_module.next_poll_time = current_time + 60  # Next poll in 60 seconds
                     exclude_pods = config.get('auto_stop', {}).get('exclude_pods', []) if config else []
                     
+                    # Get current pod IDs for termination detection
+                    current_pod_ids = {pod['id'] for pod in pods}
+                    current_pod_names = {pod['name'] for pod in pods}
+                    
+                    # Check for terminated pods (pods we were tracking but are no longer in the API)
+                    if main_data_tracker:
+                        tracked_pods = set(main_data_tracker.data.keys())
+                        terminated_pod_ids = tracked_pods - current_pod_ids
+                        
+                        for terminated_pod_id in terminated_pod_ids:
+                            # Get the last known data for this pod
+                            pod_data = main_data_tracker.data.get(terminated_pod_id, [])
+                            if pod_data:
+                                last_metric = pod_data[-1]
+                                pod_name = last_metric.get('name', 'Unknown')
+                                
+                                # Check if we've already logged termination for this pod
+                                already_terminated = any(
+                                    metric.get('status') == 'TERMINATED' 
+                                    for metric in pod_data
+                                )
+                                
+                                if not already_terminated:
+                                    print(f"   🔴 TERMINATED: Pod '{pod_name}' ({terminated_pod_id}) no longer exists - logging termination")
+                                    
+                                    # Create a termination record
+                                    termination_record = last_metric.copy()
+                                    termination_record.update({
+                                        'timestamp': datetime.now().isoformat(),
+                                        'epoch': int(time.time()),
+                                        'status': 'TERMINATED',
+                                        'cpu_percent': 0,
+                                        'gpu_percent': 0,
+                                        'memory_percent': 0,
+                                        'uptime_seconds': 0
+                                    })
+                                    
+                                    # Add termination record to the pod's data
+                                    main_data_tracker.data[terminated_pod_id].append(termination_record)
+                                    main_data_tracker.save_data()
+                    
                     # Auto-cleanup exclusion list: remove pods that no longer exist
                     if exclude_pods:
-                        current_pod_ids = {pod['id'] for pod in pods}
-                        current_pod_names = {pod['name'] for pod in pods}
                         original_exclude_count = len(exclude_pods)
                         
                         # Keep only pods that still exist (either by ID or name)
@@ -85,10 +125,8 @@ def simple_monitoring_loop():
                             main_data_tracker.add_metric(pod_id, pod)
                             print(f"   📊 MONITORED: '{pod_name}' (status: {status}) - metrics collected")
                             
-                            # Apply smart rolling window: keep minimum 1 hour, or duration * 1.5 if larger
-                            duration = config.get('auto_stop', {}).get('thresholds', {}).get('duration', 1800)
-                            smart_window = max(3600, int(duration * 1.5))  # min 1 hour, or duration * 1.5
-                            main_data_tracker.apply_rolling_window(pod_id, smart_window)
+                            # NOTE: We don't apply rolling window here anymore to preserve historical data
+                            # Data retention is handled by the retention policy cleanup instead
                             
                             # Check auto-stop conditions if monitoring is active
                             auto_stop_config = config.get('auto_stop', {})
