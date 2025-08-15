@@ -3,15 +3,15 @@
 Web server for RunPod Monitor with HTMX-based GUI
 """
 
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, Form, Query
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import time
 import yaml
 import threading
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 try:
     from .main import fetch_pods, stop_pod, resume_pod, load_config, config, data_tracker, monitor_pods, last_poll_time, next_poll_time
@@ -705,7 +705,7 @@ async def get_next_poll():
     }
 
 @app.get("/api/raw-data")
-async def get_raw_data(request: Request, pod_filter: str = None):
+async def get_raw_data(request: Request, pod_filter: str = None, duration: int = None):
     """Get raw data points as HTML table with optional pod filtering."""
     # Read directly from file instead of using data_tracker
     all_raw_data = []
@@ -716,8 +716,20 @@ async def get_raw_data(request: Request, pod_filter: str = None):
         with open('./data/pod_metrics.json', 'r') as f:
             data = json.load(f)
             
+        # Apply time filtering if duration is specified
+        cutoff_time = None
+        if duration:
+            cutoff_time = time.time() - duration
+        
         for pod_id, metrics_list in data.items():
-            for metric in metrics_list[-20:]:  # Last 20 data points per pod for better filtering
+            # Apply time filter if specified
+            if cutoff_time:
+                filtered_metrics = [m for m in metrics_list if m.get('epoch', 0) >= cutoff_time]
+            else:
+                # Default: last 20 data points per pod for performance
+                filtered_metrics = metrics_list[-20:] if not duration else metrics_list
+            
+            for metric in filtered_metrics:
                 all_raw_data.append(metric)
                 if metric.get('name'):
                     pod_names.add(metric.get('name'))
@@ -1327,7 +1339,121 @@ async def cleanup_excluded_pods(request: Request):
         <div class="alert alert-{status} alert-dismissible">
             <small>{message}</small>
         </div>
-        <div hx-get="/config" hx-target="body" hx-trigger="load delay:2s" hx-select="body" hx-swap="innerHTML"></div>
+    ''')
+
+@app.get("/api/export")
+async def export_data_endpoint(
+    format: str = Query("csv", description="Export format: csv or json"),
+    pod_id: Optional[str] = Query(None, description="Specific pod ID to export"),
+    duration: Optional[int] = Query(None, description="Duration in seconds (e.g., 3600 for 1 hour)"),
+    start_time: Optional[int] = Query(None, description="Start timestamp (Unix epoch)"),
+    end_time: Optional[int] = Query(None, description="End timestamp (Unix epoch)")
+):
+    """Export pod metrics data in CSV or JSON format."""
+    if not data_tracker:
+        return JSONResponse({"error": "Data tracker not available"}, status_code=500)
+    
+    try:
+        exported_data = data_tracker.export_data(
+            format_type=format,
+            pod_id=pod_id,
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=duration
+        )
+        
+        # Determine filename and content type
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if format.lower() == "csv":
+            filename = f"runpod_metrics_{timestamp}.csv"
+            content_type = "text/csv"
+        else:
+            filename = f"runpod_metrics_{timestamp}.json"
+            content_type = "application/json"
+        
+        # Add pod name to filename if specific pod
+        if pod_id:
+            try:
+                # Try to get pod name from current pods
+                current_pods = fetch_pods()
+                pod_name = None
+                if current_pods:
+                    for pod in current_pods:
+                        if pod['id'] == pod_id:
+                            pod_name = pod['name'].replace(' ', '_').replace('/', '_')
+                            break
+                
+                if pod_name:
+                    filename = f"runpod_metrics_{pod_name}_{timestamp}.{format.lower()}"
+            except:
+                pass  # Keep original filename if error
+        
+        headers = {
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+        
+        return Response(
+            content=exported_data,
+            media_type=content_type,
+            headers=headers
+        )
+        
+    except Exception as e:
+        return JSONResponse({"error": f"Export failed: {str(e)}"}, status_code=500)
+
+@app.post("/config/retention")
+async def update_retention_config(
+    request: Request,
+    retention_value: Optional[int] = Form(None),
+    retention_unit: str = Form(...)
+):
+    """Update data retention policy configuration."""
+    # Debug: log received values
+    print(f"DEBUG: Received retention_value={retention_value} (type: {type(retention_value)}), retention_unit={retention_unit}")
+    
+    try:
+        from .main import config as current_config
+    except ImportError:
+        from main import config as current_config
+    
+    if not current_config:
+        return HTMLResponse(
+            '<div class="alert alert-danger">No configuration available</div>',
+            status_code=500
+        )
+    
+    # Update retention policy
+    if 'storage' not in current_config:
+        current_config['storage'] = {}
+    
+    # Ensure we have a valid value
+    if retention_value is None or retention_value <= 0:
+        retention_value = 1  # Simple fallback
+    
+    current_config['storage']['retention_policy'] = {
+        'value': retention_value,
+        'unit': retention_unit
+    }
+    
+    # Save to file
+    if save_config_to_file(current_config, config_path):
+        status = "success"
+        message = f"✅ Data retention updated to {retention_value} {retention_unit}"
+    else:
+        status = "danger"
+        message = "❌ Failed to save retention configuration"
+    
+    # Prepare the current display text for the updated config
+    current_display = f"Current: {retention_value} {retention_unit}"
+    
+    return HTMLResponse(f'''
+        <div class="alert alert-{status} alert-dismissible">
+            {message}
+        </div>
+        <script>
+            // Update the current retention display
+            document.getElementById('current-retention-display').innerHTML = '{current_display}';
+        </script>
     ''')
 
 if __name__ == "__main__":

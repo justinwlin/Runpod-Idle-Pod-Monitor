@@ -32,7 +32,20 @@ def load_config(config_path: str = "config.yaml"):
     
     try:
         with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+            # Read the raw content and substitute environment variables
+            content = f.read()
+            # Simple environment variable substitution
+            import re
+            def replace_env_var(match):
+                var_with_default = match.group(1)
+                if ':-' in var_with_default:
+                    var_name, default_value = var_with_default.split(':-', 1)
+                    return os.getenv(var_name, default_value)
+                else:
+                    return os.getenv(var_with_default, match.group(0))
+            
+            content = re.sub(r'\$\{([^}]+)\}', replace_env_var, content)
+            config = yaml.safe_load(content)
     except FileNotFoundError:
         print(f"Config file {config_path} not found.")
         
@@ -42,7 +55,19 @@ def load_config(config_path: str = "config.yaml"):
             print(f"Creating {config_path} from template...")
             try:
                 with open(template_path, 'r') as f:
-                    config = yaml.safe_load(f)
+                    # Read template and substitute environment variables
+                    content = f.read()
+                    import re
+                    def replace_env_var(match):
+                        var_with_default = match.group(1)
+                        if ':-' in var_with_default:
+                            var_name, default_value = var_with_default.split(':-', 1)
+                            return os.getenv(var_name, default_value)
+                        else:
+                            return os.getenv(var_with_default, match.group(0))
+                    
+                    content = re.sub(r'\$\{([^}]+)\}', replace_env_var, content)
+                    config = yaml.safe_load(content)
                 
                 # Override API key with environment variable if set
                 if os.getenv("RUNPOD_API_KEY"):
@@ -103,7 +128,10 @@ def create_default_config():
         "storage": {
             "data_dir": "./data",
             "metrics_file": "pod_metrics.json",
-            "retention_days": 30
+            "retention_policy": {
+                "value": 999,
+                "unit": "years"
+            }
         },
         "logging": {
             "level": "INFO",
@@ -544,7 +572,9 @@ def monitor_pods():
             
             # Cleanup old data periodically
             if current_time % 3600 < sampling_freq:  # Once per hour
-                data_tracker.cleanup_old_data(config.get('storage', {}).get('retention_days', 30))
+                storage_config = config.get('storage', {})
+                retention_config = storage_config.get('retention_policy', {'value': 0, 'unit': 'forever'})
+                data_tracker.cleanup_old_data(retention_config)
             
             # Sleep for sampling frequency (minimum interval)
             time.sleep(min(sampling_freq, 10))  # Max 10 second sleep to stay responsive

@@ -242,7 +242,7 @@
         
         <!-- Excluded Pods -->
         {% if config.auto_stop.exclude_pods %}
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-header">
                 <h6 class="mb-0">🛡️ Excluded Pods</h6>
             </div>
@@ -253,6 +253,51 @@
             </div>
         </div>
         {% endif %}
+        
+        <!-- Data Retention Configuration -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">🗄️ Data Retention Policy</h6>
+            </div>
+            <div class="card-body">
+                <form hx-post="/config/retention" hx-target="#retention-result">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="retention_value" class="form-label">Keep Data For</label>
+                            <input type="number" class="form-control" id="retention_value" name="retention_value" 
+                                   value="{% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'forever' %}999{% else %}{{ config.storage.retention_policy.value if config.storage and config.storage.retention_policy else 1 }}{% endif %}"
+                                   min="1" max="999" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="retention_unit" class="form-label">Unit</label>
+                            <select class="form-control" id="retention_unit" name="retention_unit">
+                                <option value="hours" {% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'hours' %}selected{% endif %}>Hours</option>
+                                <option value="days" {% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'days' %}selected{% endif %}>Days</option>
+                                <option value="weeks" {% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'weeks' %}selected{% endif %}>Weeks</option>
+                                <option value="months" {% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'months' %}selected{% endif %}>Months</option>
+                                <option value="years" {% if not config.storage or not config.storage.retention_policy or config.storage.retention_policy.unit == 'forever' or config.storage.retention_policy.unit == 'years' %}selected{% endif %}>Years</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-sm btn-primary">💾 Update Retention</button>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted" id="current-retention-display">
+                            Current: 
+                            {% if config.storage and config.storage.retention_policy and config.storage.retention_policy.unit == 'forever' %}
+                                999 years
+                            {% else %}
+                                {{ config.storage.retention_policy.value if config.storage and config.storage.retention_policy else 1 }} 
+                                {{ config.storage.retention_policy.unit if config.storage and config.storage.retention_policy else 'days' }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </form>
+                <div id="retention-result" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -469,6 +514,9 @@ function setupToggleLogic() {
         statusCard.innerHTML = content;
     }
 }
+
+// Simple retention form - no special handling needed
+
 
 // Initialize tracking when page loads
 document.addEventListener('DOMContentLoaded', function() {

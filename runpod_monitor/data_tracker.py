@@ -1,8 +1,10 @@
 import json
 import os
 import time
+import csv
+import io
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 
 
 class DataTracker:
@@ -227,9 +229,41 @@ class DataTracker:
             del self.data[pod_id]
             self.save_data()
     
-    def cleanup_old_data(self, retention_days: int):
-        """Remove data older than retention_days."""
-        cutoff_time = time.time() - (retention_days * 24 * 60 * 60)
+    def cleanup_old_data(self, retention_config: Dict):
+        """
+        Remove data based on retention policy.
+        
+        Args:
+            retention_config: Dict with 'value' and 'unit'
+        """
+        if not isinstance(retention_config, dict):
+            print(f"Warning: Invalid retention config format, skipping cleanup")
+            return
+            
+        if retention_config.get('unit') == 'forever':
+            return  # Don't clean up anything (legacy support)
+        
+        # Handle very long retention (999 years = effectively forever)
+        if retention_config.get('unit') == 'years' and retention_config.get('value', 0) >= 999:
+            return  # Don't clean up anything
+        
+        # Convert to seconds
+        value = retention_config.get('value', 30)
+        unit = retention_config.get('unit', 'days')
+        
+        seconds_map = {
+            'hours': 3600,
+            'days': 24 * 3600,
+            'weeks': 7 * 24 * 3600,
+            'months': 30 * 24 * 3600,
+            'years': 365 * 24 * 3600
+        }
+        
+        if unit not in seconds_map:
+            print(f"Warning: Unknown retention unit '{unit}', defaulting to days")
+            unit = 'days'
+        
+        cutoff_time = time.time() - (value * seconds_map[unit])
         
         for pod_id in list(self.data.keys()):
             # Filter out old metrics
@@ -290,3 +324,163 @@ class DataTracker:
             if summary:
                 summaries.append(summary)
         return summaries
+    
+    def get_filtered_metrics(self, pod_id: Optional[str] = None, 
+                           start_time: Optional[int] = None, 
+                           end_time: Optional[int] = None,
+                           duration_seconds: Optional[int] = None) -> Dict[str, List[Dict]]:
+        """
+        Get filtered metrics based on time range.
+        
+        Args:
+            pod_id: Specific pod ID to filter (None for all pods)
+            start_time: Unix timestamp for start time
+            end_time: Unix timestamp for end time
+            duration_seconds: Get data for last N seconds (alternative to start/end)
+            
+        Returns:
+            Dict of pod_id -> list of metrics
+        """
+        if duration_seconds is not None:
+            end_time = int(time.time())
+            start_time = end_time - duration_seconds
+        
+        result = {}
+        
+        # Determine which pods to process
+        pod_ids = [pod_id] if pod_id else list(self.data.keys())
+        
+        for pid in pod_ids:
+            if pid not in self.data:
+                continue
+                
+            filtered_metrics = []
+            for metric in self.data[pid]:
+                metric_time = metric.get("epoch", 0)
+                
+                # Apply time filters
+                if start_time is not None and metric_time < start_time:
+                    continue
+                if end_time is not None and metric_time > end_time:
+                    continue
+                    
+                filtered_metrics.append(metric)
+            
+            if filtered_metrics:
+                result[pid] = filtered_metrics
+        
+        return result
+    
+    def export_data(self, format_type: str = 'csv', 
+                   pod_id: Optional[str] = None,
+                   start_time: Optional[int] = None,
+                   end_time: Optional[int] = None,
+                   duration_seconds: Optional[int] = None) -> str:
+        """
+        Export data in various formats.
+        
+        Args:
+            format_type: 'csv' or 'json'
+            pod_id: Specific pod ID (None for all)
+            start_time: Unix timestamp start
+            end_time: Unix timestamp end
+            duration_seconds: Last N seconds of data
+            
+        Returns:
+            Formatted data as string
+        """
+        filtered_data = self.get_filtered_metrics(
+            pod_id=pod_id,
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=duration_seconds
+        )
+        
+        if format_type.lower() == 'csv':
+            return self._export_csv(filtered_data)
+        elif format_type.lower() == 'json':
+            return json.dumps(filtered_data, indent=2)
+        else:
+            raise ValueError(f"Unsupported export format: {format_type}")
+    
+    def _export_csv(self, data: Dict[str, List[Dict]]) -> str:
+        """Convert metrics data to CSV format."""
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        header = [
+            'timestamp', 'epoch', 'pod_id', 'name', 'status', 'cost_per_hr',
+            'uptime_seconds', 'cpu_percent', 'memory_percent', 'gpu_percent',
+            'gpu_memory_percent', 'gpu_count'
+        ]
+        writer.writerow(header)
+        
+        # Write data rows
+        for pod_id, metrics in data.items():
+            for metric in metrics:
+                row = [
+                    metric.get('timestamp', ''),
+                    metric.get('epoch', 0),
+                    metric.get('pod_id', pod_id),
+                    metric.get('name', ''),
+                    metric.get('status', ''),
+                    metric.get('cost_per_hr', 0),
+                    metric.get('uptime_seconds', 0),
+                    metric.get('cpu_percent', 0),
+                    metric.get('memory_percent', 0),
+                    metric.get('gpu_percent', 0),
+                    metric.get('gpu_memory_percent', 0),
+                    metric.get('gpu_count', 0)
+                ]
+                writer.writerow(row)
+        
+        return output.getvalue()
+    
+    def get_retention_info(self, retention_config: Dict) -> Dict:
+        """Get human-readable retention information."""
+        if not isinstance(retention_config, dict):
+            # Fallback for invalid config
+            return {
+                'value': 0,
+                'unit': 'forever',
+                'display': 'Forever',
+                'seconds': 0
+            }
+            
+        value = retention_config.get('value', 0)
+        unit = retention_config.get('unit', 'forever')
+        
+        if unit == 'forever':
+            return {
+                'value': 999,
+                'unit': 'years',
+                'display': '999 years',
+                'seconds': 999 * 365 * 24 * 3600
+            }
+        
+        # Handle very long retention (999 years = effectively forever)
+        if unit == 'years' and value >= 999:
+            return {
+                'value': 999,
+                'unit': 'years',
+                'display': '999 years',
+                'seconds': 999 * 365 * 24 * 3600
+            }
+        
+        seconds_map = {
+            'hours': 3600,
+            'days': 24 * 3600,
+            'weeks': 7 * 24 * 3600,
+            'months': 30 * 24 * 3600,
+            'years': 365 * 24 * 3600
+        }
+        
+        seconds = value * seconds_map.get(unit, 24 * 3600)
+        
+        return {
+            'value': value,
+            'unit': unit,
+            'display': f"{value} {unit}",
+            'seconds': seconds
+        }

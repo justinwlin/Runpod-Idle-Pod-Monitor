@@ -17,9 +17,11 @@ auto_stop:
   exclude_pods: []
   include_pods: []
 storage:
-  data_dir: ./data
+  data_dir: ${DATA_DIR:-./data}
   metrics_file: pod_metrics.json
-  retention_days: 30
+  retention_policy:
+    value: 999
+    unit: years  # hours, days, weeks, months, years
 logging:
   level: INFO
   file: runpod_monitor.log

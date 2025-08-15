@@ -131,6 +131,15 @@ def simple_monitoring_loop():
             import traceback
             traceback.print_exc()
         
+        # Cleanup old data periodically (every hour)
+        if int(current_time) % 3600 < 60:  # Once per hour (within first minute of each hour)
+            storage_config = config.get('storage', {}) if config else {}
+            retention_config = storage_config.get('retention_policy', {'value': 0, 'unit': 'forever'})
+            if main_data_tracker:
+                print(f"   🧹 Performing data retention cleanup...")
+                main_data_tracker.cleanup_old_data(retention_config)
+                print(f"   ✅ Data retention cleanup completed")
+        
         print(f"   ⏰ Waiting 60 seconds until next collection...")
         time.sleep(60)
 

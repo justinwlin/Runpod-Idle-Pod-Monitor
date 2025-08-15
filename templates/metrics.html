@@ -141,17 +141,51 @@
 <div class="row mt-5">
     <div class="col-12">
         <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <div>
-                    <h5 class="mb-0">📋 Raw Data Points</h5>
-                    <small class="text-muted">Click a pod to filter data</small>
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="mb-0">📋 Raw Data Points</h5>
+                        <small class="text-muted">Click a pod to filter data</small>
+                    </div>
+                    <div class="btn-group" role="group">
+                        <input type="radio" class="btn-check" name="viewMode" id="tableView" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary btn-sm" for="tableView">📊 Table</label>
+                        
+                        <input type="radio" class="btn-check" name="viewMode" id="graphView" autocomplete="off">
+                        <label class="btn btn-outline-primary btn-sm" for="graphView">📈 Graph</label>
+                    </div>
                 </div>
-                <div class="btn-group" role="group">
-                    <input type="radio" class="btn-check" name="viewMode" id="tableView" autocomplete="off" checked>
-                    <label class="btn btn-outline-primary btn-sm" for="tableView">📊 Table</label>
-                    
-                    <input type="radio" class="btn-check" name="viewMode" id="graphView" autocomplete="off">
-                    <label class="btn btn-outline-primary btn-sm" for="graphView">📈 Graph</label>
+                
+                <!-- Time Filtering and Export Controls -->
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="time-filter-select" class="form-label small">📅 Time Range Filter</label>
+                        <select id="time-filter-select" class="form-select form-select-sm">
+                            <option value="3600">Last Hour</option>
+                            <option value="14400">Last 4 Hours</option>
+                            <option value="86400" selected>Last 24 Hours</option>
+                            <option value="604800">Last Week</option>
+                            <option value="2592000">Last Month</option>
+                            <option value="all">All Available Data</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="pod-filter-select" class="form-label small">🎯 Pod Filter</label>
+                        <select id="pod-filter-select" class="form-select form-select-sm">
+                            <option value="">All Pods</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">📤 Export Data</label>
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportData('csv')">
+                                📊 CSV
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info" onclick="exportData('json')">
+                                📄 JSON
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="card-body">
@@ -638,6 +672,115 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error('Show All Pods button not found!');
     }
+});
+
+// Export functionality
+function exportData(format) {
+    const timeFilter = document.getElementById('time-filter-select').value;
+    const podFilter = document.getElementById('pod-filter-select').value;
+    
+    // Build export URL
+    let exportUrl = `/api/export?format=${format}`;
+    
+    if (podFilter) {
+        exportUrl += `&pod_id=${encodeURIComponent(podFilter)}`;
+    }
+    
+    if (timeFilter !== 'all') {
+        exportUrl += `&duration=${timeFilter}`;
+    }
+    
+    // Show loading state
+    const csvBtn = document.querySelector('button[onclick="exportData(\'csv\')"]');
+    const jsonBtn = document.querySelector('button[onclick="exportData(\'json\')"]');
+    const activeBtn = format === 'csv' ? csvBtn : jsonBtn;
+    const originalText = activeBtn.innerHTML;
+    
+    activeBtn.innerHTML = '⏳ Exporting...';
+    activeBtn.disabled = true;
+    
+    // Create temporary link to download file
+    const link = document.createElement('a');
+    link.href = exportUrl;
+    link.download = true;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Reset button after delay
+    setTimeout(() => {
+        activeBtn.innerHTML = originalText;
+        activeBtn.disabled = false;
+    }, 2000);
+}
+
+// Initialize filter dropdowns
+async function initializeFilters() {
+    try {
+        const response = await fetch('/api/graph-pods');
+        const pods = await response.json();
+        
+        const podFilterSelect = document.getElementById('pod-filter-select');
+        
+        // Clear existing options except "All Pods"
+        podFilterSelect.innerHTML = '<option value="">All Pods</option>';
+        
+        if (Array.isArray(pods) && pods.length > 0) {
+            pods.forEach(pod => {
+                const option = document.createElement('option');
+                option.value = pod.id;
+                option.textContent = `${pod.name} (${pod.id.substring(0, 8)}...)`;
+                podFilterSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load pod filter options:', error);
+    }
+}
+
+// Add event listeners for filters
+document.addEventListener('DOMContentLoaded', function() {
+    initializeFilters();
+    
+    // Update table view when filters change
+    const timeFilterSelect = document.getElementById('time-filter-select');
+    const podFilterSelect = document.getElementById('pod-filter-select');
+    
+    function updateTableView() {
+        const tableContainer = document.getElementById('raw-data-table');
+        const timeFilter = timeFilterSelect.value;
+        const podFilter = podFilterSelect.value;
+        
+        let url = '/api/raw-data';
+        const params = [];
+        
+        if (podFilter) {
+            params.push(`pod_filter=${encodeURIComponent(podFilter)}`);
+        }
+        
+        if (timeFilter !== 'all') {
+            params.push(`duration=${timeFilter}`);
+        }
+        
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+        
+        // Update table with filtered data
+        tableContainer.innerHTML = '<p>Loading filtered data...</p>';
+        fetch(url)
+            .then(response => response.text())
+            .then(html => {
+                tableContainer.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Failed to load filtered data:', error);
+                tableContainer.innerHTML = '<p class="text-danger">Error loading data</p>';
+            });
+    }
+    
+    timeFilterSelect.addEventListener('change', updateTableView);
+    podFilterSelect.addEventListener('change', updateTableView);
 });
 </script>
 
