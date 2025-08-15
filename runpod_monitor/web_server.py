@@ -355,6 +355,27 @@ async def update_auto_stop(
         <div id="status-overview" hx-swap-oob="innerHTML">
             {status_overview_html}
         </div>
+        <div id="settings-card-body" hx-swap-oob="innerHTML">
+            <div class="row text-center mb-3">
+                <div class="col-4">
+                    <div class="fw-bold">{max_cpu}%</div>
+                    <small class="text-muted">CPU</small>
+                </div>
+                <div class="col-4">
+                    <div class="fw-bold">{max_gpu}%</div>
+                    <small class="text-muted">GPU</small>
+                </div>
+                <div class="col-4">
+                    <div class="fw-bold">{max_memory}%</div>
+                    <small class="text-muted">Memory</small>
+                </div>
+            </div>
+            
+            <div class="text-center">
+                <div class="fw-bold">{duration // 60} minutes</div>
+                <small class="text-muted">Duration</small>
+            </div>
+        </div>
     ''')
 
 
