@@ -288,9 +288,9 @@ function startChartRefresh() {
         
         if (graphContainer.style.display === 'block') {
             if (allContainer.style.display === 'block') {
-                // Refresh all pods charts
-                console.log('Auto-refreshing all pods charts...');
-                showAllPods();
+                // Refresh all pods charts data only (don't recreate)
+                console.log('Auto-refreshing all pods charts data...');
+                refreshAllPodsData();
             } else {
                 // Refresh single pod chart
                 const podSelector = document.getElementById('pod-selector');
@@ -471,9 +471,20 @@ async function loadChartData(podId, timeRange) {
 
 // Show all pods functionality
 let allPodsCharts = [];
+let allPodsData = []; // Store pod list for refresh
 
 async function showAllPods() {
     console.log('Show All Pods button clicked');
+    
+    // Stop auto-refresh during chart creation to prevent conflicts
+    stopChartRefresh();
+    
+    // Also temporarily disable HTMX auto-refresh on the raw data table
+    const rawDataTable = document.getElementById('raw-data-table');
+    if (rawDataTable) {
+        rawDataTable.setAttribute('hx-trigger', 'none');
+    }
+    
     const loading = document.getElementById('chart-loading');
     const singleContainer = document.getElementById('single-chart-container');
     const allContainer = document.getElementById('all-charts-container');
@@ -505,10 +516,41 @@ async function showAllPods() {
             return;
         }
         
-        // Destroy existing charts
+        // Store pods data for future refreshes
+        allPodsData = pods;
+        
+        // Destroy existing charts safely
         console.log('Destroying existing charts:', allPodsCharts.length);
-        allPodsCharts.forEach(chart => chart.destroy());
+        allPodsCharts.forEach(chart => {
+            try {
+                if (chart && typeof chart.destroy === 'function') {
+                    chart.destroy();
+                }
+            } catch (e) {
+                console.warn('Failed to destroy chart:', e);
+            }
+        });
         allPodsCharts = [];
+        
+        // Destroy ALL Chart.js instances globally to prevent ID conflicts
+        try {
+            if (window.Chart && Chart.instances) {
+                console.log('Destroying all Chart.js instances:', Object.keys(Chart.instances).length);
+                Object.values(Chart.instances).forEach(chart => {
+                    try {
+                        if (chart && typeof chart.destroy === 'function') {
+                            chart.destroy();
+                        }
+                    } catch (e) {
+                        console.warn('Failed to destroy chart instance:', e);
+                    }
+                });
+                // Clear the instances registry
+                Chart.instances = {};
+            }
+        } catch (e) {
+            console.warn('Failed to clear Chart.js instances:', e);
+        }
         
         // Create container for all charts
         allContainer.innerHTML = '';
@@ -517,12 +559,14 @@ async function showAllPods() {
         // Load data for each pod and create charts
         for (const pod of pods) {
             console.log(`Processing pod: ${pod.name} (${pod.id})`);
+            // Create safe ID by replacing special characters
+            const safeId = pod.id.replace(/[^a-zA-Z0-9-_]/g, '_');
             const chartDiv = document.createElement('div');
             chartDiv.className = 'mb-4 border p-3';
             chartDiv.innerHTML = `
                 <h6>${pod.name} <small class="text-muted">(${pod.id.substring(0, 8)}...)</small></h6>
                 <div style="height: 300px;">
-                    <canvas id="chart-${pod.id}"></canvas>
+                    <canvas id="chart-${safeId}"></canvas>
                 </div>
             `;
             allContainer.appendChild(chartDiv);
@@ -543,7 +587,20 @@ async function showAllPods() {
                 continue;
             }
             
-            const ctx = document.getElementById(`chart-${pod.id}`).getContext('2d');
+            // Check if canvas element exists and is in the DOM before trying to get context
+            const canvasElement = document.getElementById(`chart-${safeId}`);
+            if (!canvasElement) {
+                console.error(`Canvas element chart-${safeId} not found for pod ${pod.id}! Skipping chart creation.`);
+                continue;
+            }
+            
+            // Check if the canvas is actually in the DOM (not removed by scrolling/refresh)
+            if (!document.body.contains(canvasElement)) {
+                console.error(`Canvas element chart-${safeId} is not in the DOM for pod ${pod.id}! Skipping chart creation.`);
+                continue;
+            }
+            
+            const ctx = canvasElement.getContext('2d');
             const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -605,14 +662,86 @@ async function showAllPods() {
             
             allPodsCharts.push(chart);
             console.log(`Chart created for ${pod.name}`);
+            
+            // Small delay to prevent overwhelming the browser
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         console.log(`All ${allPodsCharts.length} charts created successfully`);
         loading.style.display = 'none';
+        
+        // Re-enable HTMX auto-refresh on the raw data table
+        const rawDataTable = document.getElementById('raw-data-table');
+        if (rawDataTable) {
+            rawDataTable.setAttribute('hx-trigger', 'load, every 15s');
+        }
+        
+        // Restart auto-refresh now that charts are created
+        startChartRefresh();
     } catch (error) {
         console.error('Failed to load all pods charts:', error);
         allContainer.innerHTML = `<p class="text-danger text-center">Error loading charts: ${error.message}</p>`;
         loading.style.display = 'none';
+        
+        // Re-enable HTMX auto-refresh even on error
+        const rawDataTable = document.getElementById('raw-data-table');
+        if (rawDataTable) {
+            rawDataTable.setAttribute('hx-trigger', 'load, every 15s');
+        }
+        
+        // Restart auto-refresh even on error
+        startChartRefresh();
+    }
+}
+
+// Refresh existing charts with new data (don't recreate)
+async function refreshAllPodsData() {
+    if (!allPodsData || allPodsData.length === 0 || allPodsCharts.length === 0) {
+        console.log('No pods data or charts to refresh');
+        return;
+    }
+    
+    const timeRange = document.getElementById('time-range').value;
+    console.log(`Refreshing data for ${allPodsCharts.length} charts`);
+    
+    try {
+        // Update each existing chart with new data
+        for (let i = 0; i < allPodsData.length && i < allPodsCharts.length; i++) {
+            const pod = allPodsData[i];
+            const chart = allPodsCharts[i];
+            
+            if (!chart || typeof chart.update !== 'function') {
+                console.warn(`Chart ${i} for pod ${pod.name} is invalid, skipping`);
+                continue;
+            }
+            
+            try {
+                // Fetch new data
+                const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.warn(`No data for pod ${pod.name}, skipping update`);
+                    continue;
+                }
+                
+                // Update chart data
+                chart.data.labels = data.timestamps;
+                chart.data.datasets[0].data = data.cpu;
+                chart.data.datasets[1].data = data.memory;
+                chart.data.datasets[2].data = data.gpu;
+                
+                // Update the chart
+                chart.update('none'); // 'none' = no animation for faster updates
+                
+            } catch (error) {
+                console.warn(`Failed to update chart for pod ${pod.name}:`, error);
+            }
+        }
+        
+        console.log('All charts data refreshed successfully');
+    } catch (error) {
+        console.error('Failed to refresh charts data:', error);
     }
 }
 
