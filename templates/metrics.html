@@ -176,15 +176,10 @@
                         </select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small">📤 Export Data</label>
-                        <div class="btn-group w-100" role="group">
-                            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportData('csv')">
-                                📊 CSV
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-info" onclick="exportData('json')">
-                                📄 JSON
-                            </button>
-                        </div>
+                        <label class="form-label small">💾 Backup Data</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="exportData()">
+                            📦 Download ZIP Backup
+                        </button>
                     </div>
                 </div>
             </div>
@@ -832,30 +827,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Export functionality
-function exportData(format) {
-    const timeFilter = document.getElementById('time-filter-select').value;
-    const podFilter = document.getElementById('pod-filter-select').value;
-    
-    // Build export URL
-    let exportUrl = `/api/export?format=${format}`;
-    
-    if (podFilter) {
-        exportUrl += `&pod_id=${encodeURIComponent(podFilter)}`;
-    }
-    
-    if (timeFilter !== 'all') {
-        exportUrl += `&duration=${timeFilter}`;
-    }
+// Export functionality - Downloads a ZIP backup of the entire data folder
+function exportData() {
+    // Simple export - just download the ZIP backup
+    const exportUrl = '/api/export';
     
     // Show loading state
-    const csvBtn = document.querySelector('button[onclick="exportData(\'csv\')"]');
-    const jsonBtn = document.querySelector('button[onclick="exportData(\'json\')"]');
-    const activeBtn = format === 'csv' ? csvBtn : jsonBtn;
-    const originalText = activeBtn.innerHTML;
+    const exportBtn = document.querySelector('button[onclick="exportData()"]');
+    const originalText = exportBtn.innerHTML;
     
-    activeBtn.innerHTML = '⏳ Exporting...';
-    activeBtn.disabled = true;
+    exportBtn.innerHTML = '⏳ Creating backup...';
+    exportBtn.disabled = true;
     
     // Create temporary link to download file
     const link = document.createElement('a');
@@ -867,8 +849,8 @@ function exportData(format) {
     
     // Reset button after delay
     setTimeout(() => {
-        activeBtn.innerHTML = originalText;
-        activeBtn.disabled = false;
+        exportBtn.innerHTML = originalText;
+        exportBtn.disabled = false;
     }, 2000);
 }
 

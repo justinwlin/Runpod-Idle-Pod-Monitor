@@ -737,77 +737,57 @@ async def get_graph_data(pod_id: str, timeRange: int = 3600, resolution: str = "
 
 
 @router.get("/api/export")
-async def export_data_endpoint(
-    format: str = Query("csv", description="Export format: csv or json"),
-    pod_id: Optional[str] = Query(None, description="Specific pod ID to export"),
-    duration: Optional[int] = Query(None, description="Duration in seconds (e.g., 3600 for 1 hour)"),
-    start_time: Optional[int] = Query(None, description="Start timestamp (Unix epoch)"),
-    end_time: Optional[int] = Query(None, description="End timestamp (Unix epoch)")
-):
+async def export_data_endpoint():
     """
-    Export pod metrics data in CSV or JSON format.
-    Allows filtering by pod, time range, and format.
+    Export all metrics data as a ZIP file of the entire data folder.
+    Creates a complete backup of all pod metrics, counters, and statistics.
     
-    Args:
-        format: Export format (csv or json)
-        pod_id: Optional specific pod ID to export
-        duration: Optional duration in seconds
-        start_time: Optional start timestamp
-        end_time: Optional end timestamp
-        
     Returns:
-        File response with exported data
+        ZIP file containing the entire data directory
     """
-    try:
-        from ..main import data_tracker, fetch_pods
-    except ImportError:
-        from runpod_monitor.main import data_tracker, fetch_pods
-    
-    if not data_tracker:
-        return JSONResponse({"error": "Data tracker not available"}, status_code=500)
+    import zipfile
+    import io
+    import os
+    from pathlib import Path
     
     try:
-        exported_data = data_tracker.export_data(
-            format_type=format,
-            pod_id=pod_id,
-            start_time=start_time,
-            end_time=end_time,
-            duration_seconds=duration
-        )
+        # Get the data directory path
+        try:
+            from ..main import config
+        except ImportError:
+            from runpod_monitor.main import config
         
-        # Determine filename and content type
+        data_dir = config.get('storage', {}).get('data_dir', './data') if config else './data'
+        
+        if not os.path.exists(data_dir):
+            return JSONResponse({"error": "Data directory not found"}, status_code=404)
+        
+        # Create a ZIP file in memory
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Walk through the data directory and add all files
+            for root, dirs, files in os.walk(data_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Calculate the archive name (relative path from data_dir)
+                    arc_name = os.path.relpath(file_path, os.path.dirname(data_dir))
+                    zip_file.write(file_path, arc_name)
+        
+        # Prepare the ZIP file for download
+        zip_buffer.seek(0)
+        
+        # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if format.lower() == "csv":
-            filename = f"runpod_metrics_{timestamp}.csv"
-            content_type = "text/csv"
-        else:
-            filename = f"runpod_metrics_{timestamp}.json"
-            content_type = "application/json"
-        
-        # Add pod name to filename if specific pod
-        if pod_id:
-            try:
-                # Try to get pod name from current pods
-                current_pods = fetch_pods()
-                pod_name = None
-                if current_pods:
-                    for pod in current_pods:
-                        if pod['id'] == pod_id:
-                            pod_name = pod['name'].replace(' ', '_').replace('/', '_')
-                            break
-                
-                if pod_name:
-                    filename = f"runpod_metrics_{pod_name}_{timestamp}.{format.lower()}"
-            except:
-                pass  # Keep original filename if error
+        filename = f"runpod_data_backup_{timestamp}.zip"
         
         headers = {
             "Content-Disposition": f"attachment; filename={filename}"
         }
         
         return Response(
-            content=exported_data,
-            media_type=content_type,
+            content=zip_buffer.getvalue(),
+            media_type="application/zip",
             headers=headers
         )
         
