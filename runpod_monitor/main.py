@@ -46,6 +46,24 @@ def load_config(config_path: str = "config.yaml"):
             
             content = re.sub(r'\$\{([^}]+)\}', replace_env_var, content)
             config = yaml.safe_load(content)
+            
+            # MIGRATION: Update old metrics_file from .json to .jsonl
+            if config.get('storage', {}).get('metrics_file') == 'pod_metrics.json':
+                print("🔄 MIGRATION: Updating config from pod_metrics.json to pod_metrics.jsonl")
+                config['storage']['metrics_file'] = 'pod_metrics.jsonl'
+                
+                # Save the updated config back to file
+                with open(config_path, 'w') as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                print("✅ Config updated and saved")
+                
+                # Also rename the file if it exists
+                old_file = os.path.join(config.get('storage', {}).get('data_dir', './data'), 'pod_metrics.json')
+                new_file = os.path.join(config.get('storage', {}).get('data_dir', './data'), 'pod_metrics.jsonl')
+                
+                if os.path.exists(old_file) and not os.path.exists(new_file):
+                    os.rename(old_file, new_file)
+                    print(f"✅ Renamed {old_file} to {new_file}")
     except FileNotFoundError:
         print(f"Config file {config_path} not found.")
         
@@ -155,7 +173,7 @@ def create_default_config():
         },
         "storage": {
             "data_dir": "./data",
-            "metrics_file": "pod_metrics.json",
+            "metrics_file": "pod_metrics.jsonl",
             "retention_policy": {
                 "value": 999,
                 "unit": "years"

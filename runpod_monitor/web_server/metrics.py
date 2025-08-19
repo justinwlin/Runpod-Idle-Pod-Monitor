@@ -615,7 +615,7 @@ async def get_graph_pods():
 
 
 @router.get("/api/graph-data/{pod_id}")
-async def get_graph_data(pod_id: str, timeRange: int = 3600):
+async def get_graph_data(pod_id: str, timeRange: int = 3600, resolution: str = "30min"):
     """
     Get metrics data for a specific pod for graphing.
     Returns time series data for CPU, GPU, and memory usage.
@@ -623,29 +623,65 @@ async def get_graph_data(pod_id: str, timeRange: int = 3600):
     Args:
         pod_id: The ID of the pod to get graph data for
         timeRange: Time range in seconds (default 3600 = 1 hour)
+        resolution: Data resolution - "raw", "30min", or "1hour" (default "30min")
         
     Returns:
         JSON response with chart data including timestamps and metrics arrays
     """
-    data = load_metrics_data()
-    if not data:
-        return JSONResponse({'error': 'No data available'})
+    # Use PodMetricsManager for per-pod data
+    try:
+        from ..pod_metrics_manager import PodMetricsManager
+    except ImportError:
+        from runpod_monitor.pod_metrics_manager import PodMetricsManager
     
-    if pod_id not in data:
-        return JSONResponse({'error': 'Pod not found'})
+    manager = PodMetricsManager(base_dir='./data/pods')
     
-    # Filter data by time range
+    # Map resolution to file type
+    file_type_map = {
+        "raw": "raw",
+        "30min": "30min", 
+        "1hour": "1hour"
+    }
+    file_type = file_type_map.get(resolution, "30min")
+    
+    # Calculate cutoff time
     cutoff_time = time.time() - timeRange
-    recent_metrics = [
-        metric for metric in data[pod_id]
-        if metric.get('epoch', 0) >= cutoff_time
-    ]
     
-    if not recent_metrics:
-        return JSONResponse({'error': 'No recent data'})
+    # Read metrics based on resolution
+    if file_type in ["30min", "1hour"]:
+        # Read compacted data
+        metrics = manager.read_metrics(
+            pod_id, 
+            file_type=file_type,
+            start_epoch=cutoff_time
+        )
+        
+        # If no compacted data, fall back to raw
+        if not metrics:
+            metrics = manager.read_metrics(
+                pod_id,
+                file_type="raw", 
+                start_epoch=cutoff_time
+            )
+            file_type = "raw"  # Mark that we're using raw data
+    else:
+        # Read raw data
+        metrics = manager.read_metrics(
+            pod_id,
+            file_type="raw",
+            start_epoch=cutoff_time
+        )
+    
+    if not metrics:
+        return JSONResponse({'error': 'No data available for this pod'})
     
     # Sort by timestamp
-    recent_metrics.sort(key=lambda x: x.get('epoch', 0))
+    if file_type in ["30min", "1hour"]:
+        # Compacted data uses window_start_epoch
+        metrics.sort(key=lambda x: x.get('window_start_epoch', 0))
+    else:
+        # Raw data uses epoch
+        metrics.sort(key=lambda x: x.get('epoch', 0))
     
     # Extract data for chart
     timestamps = []
@@ -653,43 +689,50 @@ async def get_graph_data(pod_id: str, timeRange: int = 3600):
     memory_data = []
     gpu_data = []
     
-    for metric in recent_metrics:
-        # Format timestamp
-        timestamp = metric.get('timestamp', '')
-        if timestamp:
-            # Convert to readable format
-            try:
-                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                timestamps.append(dt.strftime('%H:%M:%S'))
-            except:
-                timestamps.append(timestamp[-8:])  # Last 8 chars for time
+    for metric in metrics:
+        # Format timestamp based on data type
+        if file_type in ["30min", "1hour"]:
+            # Use window midpoint for compacted data
+            window_start = metric.get('window_start_epoch', 0)
+            window_end = metric.get('window_end_epoch', 0)
+            midpoint = (window_start + window_end) / 2
+            dt = datetime.fromtimestamp(midpoint)
+            timestamps.append(dt.strftime('%H:%M'))
+            
+            # Use average values for compacted data
+            cpu_data.append(metric.get('cpu_avg', 0))
+            memory_data.append(metric.get('memory_avg', 0))
+            gpu_data.append(metric.get('gpu_avg', 0))
         else:
-            timestamps.append('')
-        
-        cpu_data.append(metric.get('cpu_percent', 0))
-        memory_data.append(metric.get('memory_percent', 0))
-        gpu_data.append(metric.get('gpu_percent', 0))
+            # Raw data handling
+            timestamp = metric.get('timestamp', '')
+            if timestamp:
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    timestamps.append(dt.strftime('%H:%M:%S'))
+                except:
+                    timestamps.append(timestamp[-8:] if len(timestamp) >= 8 else '')
+            else:
+                timestamps.append('')
+            
+            cpu_data.append(metric.get('cpu_percent', 0))
+            memory_data.append(metric.get('memory_percent', 0))
+            gpu_data.append(metric.get('gpu_percent', 0))
     
     # Get pod name
-    try:
-        from ..main import fetch_pods
-    except ImportError:
-        from runpod_monitor.main import fetch_pods
-    
-    current_pods = fetch_pods()
     pod_name = pod_id[:8] + "..."
-    if current_pods:
-        for pod in current_pods:
-            if pod['id'] == pod_id:
-                pod_name = pod['name']
-                break
+    if metrics:
+        # Try to get name from the metrics
+        pod_name = metrics[-1].get('name', pod_name)
     
     return JSONResponse({
         'podName': pod_name,
         'timestamps': timestamps,
         'cpu': cpu_data,
         'memory': memory_data,
-        'gpu': gpu_data
+        'gpu': gpu_data,
+        'resolution': file_type,
+        'dataPoints': len(metrics)
     })
 
 

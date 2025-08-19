@@ -124,12 +124,24 @@ class PodMetricsManager:
                     if line.strip():
                         metric = json.loads(line)
                         
-                        # Apply time filters if specified
-                        epoch = metric.get('epoch', 0)
-                        if start_epoch and epoch < start_epoch:
-                            continue
-                        if end_epoch and epoch > end_epoch:
-                            continue
+                        # Apply time filters based on data type
+                        if file_type in ["30min", "1hour", "daily"]:
+                            # Compacted data uses window epochs
+                            window_start = metric.get('window_start_epoch', 0)
+                            window_end = metric.get('window_end_epoch', 0)
+                            
+                            # Include window if it overlaps with requested time range
+                            if start_epoch and window_end < start_epoch:
+                                continue
+                            if end_epoch and window_start > end_epoch:
+                                continue
+                        else:
+                            # Raw data uses epoch
+                            epoch = metric.get('epoch', 0)
+                            if start_epoch and epoch < start_epoch:
+                                continue
+                            if end_epoch and epoch > end_epoch:
+                                continue
                         
                         metrics.append(metric)
         except Exception as e:

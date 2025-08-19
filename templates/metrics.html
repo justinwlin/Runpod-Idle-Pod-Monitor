@@ -204,7 +204,7 @@
                                 <option value="">Select a pod to view graph...</option>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <select id="time-range" class="form-select form-select-sm">
                                 <option value="3600">Last Hour</option>
                                 <option value="14400">Last 4 Hours</option>
@@ -212,7 +212,14 @@
                                 <option value="604800">Last Week</option>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <select id="data-resolution" class="form-select form-select-sm">
+                                <option value="30min" selected>30-Minute Avg</option>
+                                <option value="raw">Raw Data</option>
+                                <option value="1hour">Hourly Avg</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
                             <button id="show-all-pods" class="btn btn-outline-primary btn-sm w-100">
                                 📊 Show All Pods
                             </button>
@@ -384,14 +391,19 @@ async function loadPodOptions() {
 }
 
 // Load chart data
-async function loadChartData(podId, timeRange) {
+async function loadChartData(podId, timeRange, resolution = null) {
     if (!podId) return;
     
     const loading = document.getElementById('chart-loading');
     loading.style.display = 'block';
     
+    // Get resolution from selector if not provided
+    if (!resolution) {
+        resolution = document.getElementById('data-resolution').value;
+    }
+    
     try {
-        const response = await fetch(`/api/graph-data/${podId}?timeRange=${timeRange}`);
+        const response = await fetch(`/api/graph-data/${podId}?timeRange=${timeRange}&resolution=${resolution}`);
         const data = await response.json();
         
         if (metricsChart) {
@@ -489,6 +501,7 @@ async function showAllPods() {
     const singleContainer = document.getElementById('single-chart-container');
     const allContainer = document.getElementById('all-charts-container');
     const timeRange = document.getElementById('time-range').value;
+    const resolution = document.getElementById('data-resolution').value;
     
     console.log('Elements found:', {
         loading: !!loading,
@@ -573,7 +586,7 @@ async function showAllPods() {
             
             // Load chart data
             console.log(`Fetching data for pod ${pod.id}...`);
-            const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+            const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}&resolution=${resolution}`);
             console.log(`Data response status for ${pod.name}:`, response.status);
             const data = await response.json();
             console.log(`Data for ${pod.name}:`, data);
@@ -702,7 +715,8 @@ async function refreshAllPodsData() {
     }
     
     const timeRange = document.getElementById('time-range').value;
-    console.log(`Refreshing data for ${allPodsCharts.length} charts`);
+    const resolution = document.getElementById('data-resolution').value;
+    console.log(`Refreshing data for ${allPodsCharts.length} charts with resolution: ${resolution}`);
     
     try {
         // Update each existing chart with new data
@@ -717,7 +731,7 @@ async function refreshAllPodsData() {
             
             try {
                 // Fetch new data
-                const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+                const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}&resolution=${resolution}`);
                 const data = await response.json();
                 
                 if (data.error) {
@@ -781,6 +795,21 @@ document.getElementById('time-range').addEventListener('change', function() {
     } else if (podId) {
         // If showing single pod, reload single chart
         loadChartData(podId, this.value);
+    }
+});
+
+// Data resolution change
+document.getElementById('data-resolution').addEventListener('change', function() {
+    const podId = document.getElementById('pod-selector').value;
+    const timeRange = document.getElementById('time-range').value;
+    const allContainer = document.getElementById('all-charts-container');
+    
+    if (allContainer.style.display === 'block') {
+        // If showing all pods, reload all charts with new resolution
+        showAllPods();
+    } else if (podId) {
+        // If showing single pod, reload single chart with new resolution
+        loadChartData(podId, timeRange, this.value);
     }
 });
 
