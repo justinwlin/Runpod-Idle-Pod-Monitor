@@ -255,7 +255,7 @@ async function updateNextCollection() {
             const nextTime = data.next_collection_time;
             textElement.textContent = `Next collection at ${nextTime} (in ${data.seconds_remaining}s)`;
         } else if (data.monitoring_running) {
-            textElement.textContent = 'Collecting data now...';
+            textElement.textContent = 'Monitoring active - waiting for next collection...';
         } else {
             textElement.textContent = 'Not collecting data - monitoring inactive';
         }

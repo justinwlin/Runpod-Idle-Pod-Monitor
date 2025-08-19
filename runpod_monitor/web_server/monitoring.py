@@ -92,14 +92,27 @@ async def get_monitoring_status():
     
     sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 30) if current_config else 60
     monitoring_enabled = current_config.get('auto_stop', {}).get('enabled', False) if current_config else False
+    monitor_only = current_config.get('auto_stop', {}).get('monitor_only', False) if current_config else False
     
     # Check if monitoring is actually running
     monitoring_active = check_monitoring_active()
     
-    # Create status indicators
-    status_class = "success" if monitoring_active else "warning"
-    status_icon = "🔄" if monitoring_active else "⏸️"
-    status_text = "Active" if monitoring_active else "Inactive"
+    # Create status indicators based on mode
+    if monitoring_active:
+        status_class = "success"
+        if monitoring_enabled:
+            status_icon = "🛑"
+            status_text = "Active (Auto-Stop)"
+        elif monitor_only:
+            status_icon = "👁️"
+            status_text = "Active (Monitor-Only)"
+        else:
+            status_icon = "🔄"
+            status_text = "Active"
+    else:
+        status_class = "warning"
+        status_icon = "⏸️"
+        status_text = "Inactive"
     
     return HTMLResponse(f'''
         <div class="mt-2 d-flex align-items-center justify-content-between" id="monitoring-status" hx-get="/api/monitoring-status" hx-trigger="every 5s" hx-target="this" hx-swap="outerHTML">
