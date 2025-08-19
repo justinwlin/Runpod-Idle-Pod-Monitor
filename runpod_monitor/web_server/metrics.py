@@ -692,11 +692,9 @@ async def get_graph_data(pod_id: str, timeRange: int = 3600, resolution: str = "
     for metric in metrics:
         # Format timestamp based on data type
         if file_type in ["30min", "1hour"]:
-            # Use window midpoint for compacted data
+            # Use window start time for compacted data
             window_start = metric.get('window_start_epoch', 0)
-            window_end = metric.get('window_end_epoch', 0)
-            midpoint = (window_start + window_end) / 2
-            dt = datetime.fromtimestamp(midpoint)
+            dt = datetime.fromtimestamp(window_start)
             timestamps.append(dt.strftime('%H:%M'))
             
             # Use average values for compacted data
