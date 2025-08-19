@@ -5,16 +5,21 @@ import csv
 import io
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
+from .metric_writer import MetricWriter
 
 
 class DataTracker:
     """Tracks pod metrics over time and manages historical data."""
     
-    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.jsonl"):
+    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.jsonl", use_metric_writer: bool = True):
         self.data_dir = data_dir
         # Use JSONL format by default
         self.metrics_file = os.path.join(data_dir, metrics_file)
         self.data: Dict[str, List[Dict]] = {}
+        
+        # Initialize MetricWriter if enabled
+        self.use_metric_writer = use_metric_writer
+        self.metric_writer = MetricWriter() if use_metric_writer else None
         
         # Ensure data directory exists
         os.makedirs(data_dir, exist_ok=True)
@@ -24,6 +29,26 @@ class DataTracker:
         
         # Load existing data
         self.load_data()
+    
+    def add_on_start_hook(self, func):
+        """Add an on-start hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_on_start_hook(func)
+    
+    def add_pre_write_hook(self, func):
+        """Add a pre-write hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_pre_write_hook(func)
+    
+    def add_post_write_hook(self, func):
+        """Add a post-write hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_post_write_hook(func)
+    
+    def start(self):
+        """Start the metric writer (runs on-start hooks)."""
+        if self.metric_writer:
+            self.metric_writer.start()
     
     def migrate_json_to_jsonl(self):
         """One-time migration from JSON to JSONL format."""
@@ -93,11 +118,18 @@ class DataTracker:
     
     def save_metric(self, metric_point: Dict):
         """Append a single metric to JSONL file (efficient append-only operation)."""
-        try:
-            with open(self.metrics_file, 'a') as f:
-                f.write(json.dumps(metric_point) + '\n')
-        except IOError as e:
-            print(f"Error: Could not append metric to file: {e}")
+        if self.use_metric_writer and self.metric_writer:
+            # Use MetricWriter with hooks
+            success = self.metric_writer.write_metric(metric_point, self.metrics_file)
+            if not success:
+                print(f"Error: MetricWriter failed to write metric")
+        else:
+            # Fallback to direct write
+            try:
+                with open(self.metrics_file, 'a') as f:
+                    f.write(json.dumps(metric_point) + '\n')
+            except IOError as e:
+                print(f"Error: Could not append metric to file: {e}")
     
     def add_metric(self, pod_id: str, pod_data: Dict[str, Any]):
         """Add a new metric data point for a pod."""

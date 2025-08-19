@@ -97,6 +97,15 @@ def load_config(config_path: str = "config.yaml"):
             metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
         )
         print(f"🗄️  Data tracker initialized with storage: {storage_config.get('data_dir', './data')}")
+        
+        # Add and run onStart hooks (example)
+        try:
+            from runpod_monitor import hooks
+            data_tracker.add_on_start_hook(hooks.hello_world_hook)
+            data_tracker.start()
+        except ImportError:
+            # Handle case where running as script directly
+            pass
     
     return config
 
@@ -637,6 +646,11 @@ def main():
         data_dir=storage_config.get('data_dir', './data'),
         metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
     )
+    
+    # Add and run onStart hooks (example)
+    from runpod_monitor import hooks
+    data_tracker.add_on_start_hook(hooks.hello_world_hook)
+    data_tracker.start()
     
     # If no arguments provided, default to interactive mode
     if len(sys.argv) == 1:
