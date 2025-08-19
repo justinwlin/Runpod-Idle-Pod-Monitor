@@ -33,8 +33,9 @@ def initialize_directories_hook() -> None:
         print(f"   📁 Ensured directory exists: {dir_path}")
 
 
-# Global auto-stop tracker instance (initialized by hook)
+# Global instances (initialized by hooks)
 _auto_stop_tracker = None
+_pod_metrics_manager = None
 
 
 def initialize_auto_stop_tracker_hook() -> None:
@@ -61,6 +62,37 @@ def initialize_auto_stop_tracker_hook() -> None:
     # Initialize from existing JSONL
     _auto_stop_tracker.initialize_from_jsonl('./data/pod_metrics.jsonl', thresholds)
     _auto_stop_tracker.set_thresholds(thresholds)
+
+
+def initialize_pod_metrics_manager_hook() -> None:
+    """
+    Initialize the per-pod metrics manager and populate from existing data.
+    This should be called once at startup.
+    """
+    global _pod_metrics_manager
+    from .pod_metrics_manager import PodMetricsManager
+    
+    print("🚀 Initializing per-pod metrics storage...")
+    
+    # Initialize manager
+    _pod_metrics_manager = PodMetricsManager(base_dir='./data/pods')
+    
+    # Initialize from main JSONL file if it exists
+    main_jsonl = './data/pod_metrics.jsonl'
+    if os.path.exists(main_jsonl):
+        pod_counts = _pod_metrics_manager.initialize_from_main_jsonl(main_jsonl)
+        
+        # Run initial compaction for all pods that have data
+        if pod_counts:
+            print("🔄 Running startup compaction for all pods...")
+            for pod_id, count in pod_counts.items():
+                if count >= 30:  # Only compact if we have enough data
+                    windows_30, _ = _pod_metrics_manager.compact_metrics(pod_id, 30)
+                    windows_60, _ = _pod_metrics_manager.compact_metrics(pod_id, 60)
+                    if windows_30 > 0 or windows_60 > 0:
+                        print(f"   ✅ Compacted {pod_id}: {windows_30} 30-min, {windows_60} 60-min windows")
+    else:
+        print("📭 No existing metrics to initialize from")
 
 
 # ============================================================================
@@ -148,6 +180,44 @@ def update_auto_stop_counter_hook(metric_point: Dict[str, Any], file_path: str) 
             if duration:
                 time_below = int(time.time() - duration)
                 print(f"⚠️  AUTO-STOP: Pod '{pod_name}' has been idle for {time_below}s")
+
+
+def write_to_pod_folder_hook(metric_point: Dict[str, Any], file_path: str) -> None:
+    """
+    Write metrics to per-pod folder structure.
+    This maintains individual pod metric files for better organization.
+    Compacts data every 30 metrics to maintain efficiency.
+    
+    Args:
+        metric_point: The metric that was just written
+        file_path: Path to the main JSONL file (not used but required by hook interface)
+    """
+    global _pod_metrics_manager
+    
+    if _pod_metrics_manager is None:
+        # Manager not initialized, skip
+        return
+    
+    pod_id = metric_point.get('pod_id')
+    if pod_id:
+        # Write to pod-specific file
+        success = _pod_metrics_manager.write_metric(pod_id, metric_point)
+        if not success:
+            print(f"⚠️ Failed to write metric to pod folder for {pod_id}")
+        else:
+            # Check how many raw metrics we have
+            raw_file = _pod_metrics_manager.get_metrics_file_path(pod_id, "raw")
+            if raw_file.exists():
+                # Count lines efficiently
+                line_count = sum(1 for _ in open(raw_file))
+                
+                # Compact every 30 metrics (using modulo)
+                if line_count > 0 and line_count % 30 == 0:
+                    print(f"📊 Triggering compaction for {pod_id} (reached {line_count} metrics)")
+                    windows_30, _ = _pod_metrics_manager.compact_metrics(pod_id, 30)
+                    windows_60, _ = _pod_metrics_manager.compact_metrics(pod_id, 60)
+                    if windows_30 > 0 or windows_60 > 0:
+                        print(f"   ✅ Created {windows_30} 30-min and {windows_60} 60-min windows")
 
 
 def auto_compact_hook(metric_point: Dict[str, Any], file_path: str) -> None:

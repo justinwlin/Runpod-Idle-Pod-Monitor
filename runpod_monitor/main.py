@@ -112,6 +112,17 @@ def load_config(config_path: str = "config.yaml"):
             except ImportError:
                 pass
         
+        # Initialize per-pod metrics
+        try:
+            from runpod_monitor import hooks
+            # Add onStart hook for pod metrics initialization
+            data_tracker.add_on_start_hook(hooks.initialize_pod_metrics_manager_hook)
+            # Add post-write hook to write to pod folders
+            data_tracker.add_post_write_hook(hooks.write_to_pod_folder_hook)
+            print(f"📁 Per-pod metrics storage configured")
+        except ImportError:
+            pass
+        
         # Start the metric writer
         data_tracker.start()
     
@@ -673,6 +684,14 @@ def main():
         from runpod_monitor import hooks
         data_tracker.add_post_write_hook(hooks.update_auto_stop_counter_hook)
         print(f"🎯 Auto-stop tracker initialized with fast counters")
+    
+    # Initialize per-pod metrics
+    from runpod_monitor import hooks
+    # Add onStart hook for pod metrics initialization
+    data_tracker.add_on_start_hook(hooks.initialize_pod_metrics_manager_hook)
+    # Add post-write hook to write to pod folders
+    data_tracker.add_post_write_hook(hooks.write_to_pod_folder_hook)
+    print(f"📁 Per-pod metrics storage configured")
     
     # Start the metric writer (runs on-start hooks)
     data_tracker.start()
