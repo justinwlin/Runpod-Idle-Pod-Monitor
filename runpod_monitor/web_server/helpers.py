@@ -76,16 +76,45 @@ def update_config_value(config_path: List[str], value: Any, current_config: Opti
 
 def load_metrics_data() -> Dict[str, Any]:
     """
-    Load metrics data from the JSON file.
+    Load metrics data from the data tracker (JSONL format).
+    Simple helper that provides easy access to all metrics data.
     
     Returns:
-        Dict containing metrics data, empty dict if file not found or invalid
+        Dict containing metrics data with pod_id as key and list of metrics as value
     """
     try:
-        with open('./data/pod_metrics.json', 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        from ..main import data_tracker
+    except ImportError:
+        try:
+            from runpod_monitor.main import data_tracker
+        except ImportError:
+            data_tracker = None
+    
+    # If data_tracker is available, use it
+    if data_tracker:
+        return data_tracker.get_all_metrics_data()
+    
+    # Fallback: try to load directly from JSONL file
+    import os
+    metrics_file = './data/pod_metrics.jsonl'
+    data = {}
+    
+    if os.path.exists(metrics_file):
+        try:
+            with open(metrics_file, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        metric = json.loads(line)
+                        pod_id = metric.get('pod_id')
+                        if pod_id:
+                            if pod_id not in data:
+                                data[pod_id] = []
+                            data[pod_id].append(metric)
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Warning: Error loading metrics file: {e}")
+            return {}
+    
+    return data
 
 
 def get_monitoring_metrics() -> Tuple[int, int]:
@@ -126,19 +155,25 @@ def check_monitoring_active(timeout_seconds: int = 120) -> bool:
     Returns:
         bool: True if monitoring is active, False otherwise
     """
+    import os
+    
+    # Only use JSONL file (JSON is deleted after migration)
+    metrics_file = './data/pod_metrics.jsonl'
+    if not os.path.exists(metrics_file):
+        return False
+    
     try:
-        with open('./data/pod_metrics.json', 'r') as f:
-            data = json.load(f)
-            
-        # Find the most recent data point
         latest_data_time = 0
-        for pod_id, metrics_list in data.items():
-            if metrics_list:
-                latest_metric = metrics_list[-1]
-                metric_time = latest_metric.get('epoch', 0)
-                if metric_time > latest_data_time:
-                    latest_data_time = metric_time
-                    
+        
+        # Read JSONL format
+        with open(metrics_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    metric = json.loads(line)
+                    metric_time = metric.get('epoch', 0)
+                    if metric_time > latest_data_time:
+                        latest_data_time = metric_time
+        
         # If we have data within the timeout period, monitoring is running
         current_time = time.time()
         return latest_data_time > current_time - timeout_seconds
@@ -154,20 +189,24 @@ def get_latest_metric_time() -> Tuple[bool, float]:
     Returns:
         Tuple of (monitoring_running, latest_data_timestamp)
     """
+    import os
     latest_data_time = 0
     
+    # Only use JSONL file (JSON is deleted after migration)
+    metrics_file = './data/pod_metrics.jsonl'
+    if not os.path.exists(metrics_file):
+        return False, 0
+    
     try:
-        with open('./data/pod_metrics.json', 'r') as f:
-            data = json.load(f)
-            
-        # Find the most recent data point across all pods
-        for pod_id, metrics_list in data.items():
-            if metrics_list:
-                latest_metric = metrics_list[-1]
-                metric_time = latest_metric.get('epoch', 0)
-                if metric_time > latest_data_time:
-                    latest_data_time = metric_time
-                    
+        # Read JSONL format (more efficient - just scan lines)
+        with open(metrics_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    metric = json.loads(line)
+                    metric_time = metric.get('epoch', 0)
+                    if metric_time > latest_data_time:
+                        latest_data_time = metric_time
+        
         # If we have data within the last 2 minutes, monitoring is running
         current_time = time.time()
         monitoring_running = latest_data_time > current_time - 120

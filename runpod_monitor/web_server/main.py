@@ -66,7 +66,7 @@ def initialize_server():
         storage_config = config.get('storage', {}) if config else {}
         data_tracker = DataTracker(
             data_dir=storage_config.get('data_dir', './data'),
-            metrics_file=storage_config.get('metrics_file', 'pod_metrics.json')
+            metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
         )
         print("📊 Data tracker initialized")
 

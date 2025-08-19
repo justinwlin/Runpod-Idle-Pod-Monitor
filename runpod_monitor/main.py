@@ -94,7 +94,7 @@ def load_config(config_path: str = "config.yaml"):
         storage_config = config.get('storage', {})
         data_tracker = DataTracker(
             data_dir=storage_config.get('data_dir', './data'),
-            metrics_file=storage_config.get('metrics_file', 'pod_metrics.json')
+            metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
         )
         print(f"🗄️  Data tracker initialized with storage: {storage_config.get('data_dir', './data')}")
     
@@ -635,7 +635,7 @@ def main():
     storage_config = config.get('storage', {})
     data_tracker = DataTracker(
         data_dir=storage_config.get('data_dir', './data'),
-        metrics_file=storage_config.get('metrics_file', 'pod_metrics.json')
+        metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
     )
     
     # If no arguments provided, default to interactive mode
