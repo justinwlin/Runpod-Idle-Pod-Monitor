@@ -5,41 +5,152 @@ import csv
 import io
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
+from .metric_writer import MetricWriter
+from .auto_stop_tracker import AutoStopTracker
 
 
 class DataTracker:
     """Tracks pod metrics over time and manages historical data."""
     
-    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.json"):
+    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.jsonl", use_metric_writer: bool = True, use_auto_stop_tracker: bool = True):
         self.data_dir = data_dir
+        # Use JSONL format by default
         self.metrics_file = os.path.join(data_dir, metrics_file)
         self.data: Dict[str, List[Dict]] = {}
+        
+        # Initialize MetricWriter if enabled
+        self.use_metric_writer = use_metric_writer
+        self.metric_writer = MetricWriter() if use_metric_writer else None
+        
+        # Initialize AutoStopTracker if enabled
+        self.use_auto_stop_tracker = use_auto_stop_tracker
+        self.auto_stop_tracker = AutoStopTracker(data_dir=data_dir) if use_auto_stop_tracker else None
         
         # Ensure data directory exists
         os.makedirs(data_dir, exist_ok=True)
         
+        # Run migration if needed (from JSON to JSONL)
+        self.migrate_json_to_jsonl()
+        
         # Load existing data
         self.load_data()
     
-    def load_data(self):
-        """Load metrics data from file."""
-        if os.path.exists(self.metrics_file):
+    def add_on_start_hook(self, func):
+        """Add an on-start hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_on_start_hook(func)
+    
+    def add_pre_write_hook(self, func):
+        """Add a pre-write hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_pre_write_hook(func)
+    
+    def add_post_write_hook(self, func):
+        """Add a post-write hook to the metric writer."""
+        if self.metric_writer:
+            self.metric_writer.add_post_write_hook(func)
+    
+    def start(self):
+        """Start the metric writer (runs on-start hooks)."""
+        if self.metric_writer:
+            self.metric_writer.start()
+    
+    def initialize_auto_stop_tracker(self, thresholds: Dict, excluded_pods: List[str] = None):
+        """
+        Initialize the auto-stop tracker with thresholds and existing data.
+        
+        Args:
+            thresholds: Auto-stop thresholds
+            excluded_pods: List of pods to exclude
+        """
+        if self.auto_stop_tracker:
+            self.auto_stop_tracker.set_thresholds(thresholds, excluded_pods)
+            self.auto_stop_tracker.initialize_from_jsonl(self.metrics_file, thresholds)
+            
+            # Also update the hook's tracker reference
+            import runpod_monitor.hooks as hooks
+            hooks._auto_stop_tracker = self.auto_stop_tracker
+    
+    def migrate_json_to_jsonl(self):
+        """One-time migration from JSON to JSONL format."""
+        json_file = os.path.join(self.data_dir, 'pod_metrics.json')
+        jsonl_file = self.metrics_file  # Should be pod_metrics.jsonl
+        
+        # Only migrate if old JSON exists and new JSONL doesn't
+        if os.path.exists(json_file) and not os.path.exists(jsonl_file):
+            print("📦 Migrating pod_metrics.json to JSONL format...")
             try:
-                with open(self.metrics_file, 'r') as f:
-                    self.data = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                print(f"Warning: Could not load metrics file: {e}")
-                self.data = {}
-        else:
+                with open(json_file, 'r') as f:
+                    old_data = json.load(f)
+                
+                # Write each metric as a separate line in JSONL
+                with open(jsonl_file, 'w') as f:
+                    for pod_id, metrics_list in old_data.items():
+                        for metric in metrics_list:
+                            # Ensure pod_id is in each metric
+                            metric['pod_id'] = pod_id
+                            f.write(json.dumps(metric) + '\n')
+                
+                # Delete the old JSON file after successful migration
+                os.remove(json_file)
+                print(f"✅ Migration complete! Old JSON file deleted.")
+                print(f"   Migrated {sum(len(metrics) for metrics in old_data.values())} metrics to JSONL")
+            except Exception as e:
+                print(f"❌ Migration failed: {e}")
+                print("   Will continue with fresh JSONL file")
+    
+    def load_data(self):
+        """Load metrics data from JSONL file."""
+        self.data = {}
+        
+        if not os.path.exists(self.metrics_file):
+            return
+        
+        try:
+            with open(self.metrics_file, 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    if line.strip():  # Skip empty lines
+                        try:
+                            metric = json.loads(line)
+                            pod_id = metric.get('pod_id')
+                            if pod_id:
+                                if pod_id not in self.data:
+                                    self.data[pod_id] = []
+                                self.data[pod_id].append(metric)
+                        except json.JSONDecodeError as e:
+                            print(f"Warning: Skipping invalid JSON at line {line_num}: {e}")
+        except IOError as e:
+            print(f"Warning: Could not load metrics file: {e}")
             self.data = {}
     
     def save_data(self):
-        """Save metrics data to file."""
+        """This method is deprecated for JSONL. Use save_metric() for individual metrics."""
+        # For backward compatibility, we'll rewrite the entire JSONL file
+        # This should rarely be called with the new append-only approach
         try:
             with open(self.metrics_file, 'w') as f:
-                json.dump(self.data, f, indent=2)
+                for pod_id, metrics_list in self.data.items():
+                    for metric in metrics_list:
+                        # Ensure pod_id is in each metric
+                        metric['pod_id'] = pod_id
+                        f.write(json.dumps(metric) + '\n')
         except IOError as e:
             print(f"Error: Could not save metrics file: {e}")
+    
+    def save_metric(self, metric_point: Dict):
+        """Append a single metric to JSONL file (efficient append-only operation)."""
+        if self.use_metric_writer and self.metric_writer:
+            # Use MetricWriter with hooks
+            success = self.metric_writer.write_metric(metric_point, self.metrics_file)
+            if not success:
+                print(f"Error: MetricWriter failed to write metric")
+        else:
+            # Fallback to direct write
+            try:
+                with open(self.metrics_file, 'a') as f:
+                    f.write(json.dumps(metric_point) + '\n')
+            except IOError as e:
+                print(f"Error: Could not append metric to file: {e}")
     
     def add_metric(self, pod_id: str, pod_data: Dict[str, Any]):
         """Add a new metric data point for a pod."""
@@ -101,11 +212,11 @@ class DataTracker:
                 print(f"Pod restart detected for {pod_id}: uptime {last_uptime}→{current_uptime}. Clearing old data.")
                 self.data[pod_id] = []  # Clear all historical data
         
-        # Add the metric point
+        # Add the metric point to memory
         self.data[pod_id].append(metric_point)
         
-        # Save to file
-        self.save_data()
+        # Append to JSONL file (efficient append-only write)
+        self.save_metric(metric_point)
     
     def get_recent_metrics(self, pod_id: str, duration_seconds: int) -> List[Dict]:
         """Get recent metrics for a pod within the specified duration."""
@@ -118,6 +229,21 @@ class DataTracker:
             metric for metric in self.data[pod_id]
             if metric.get("epoch", 0) >= cutoff_time
         ]
+    
+    def check_auto_stop_conditions_fast(self, pod_id: str) -> bool:
+        """
+        Fast O(1) check if a pod meets auto-stop conditions using counters.
+        
+        Args:
+            pod_id: Pod ID to check
+            
+        Returns:
+            True if pod should be stopped, False otherwise
+        """
+        if self.auto_stop_tracker:
+            should_stop, _ = self.auto_stop_tracker.check_auto_stop(pod_id)
+            return should_stop
+        return False
     
     def check_auto_stop_conditions(self, pod_id: str, thresholds: Dict, excluded_pods: List[str] = None) -> bool:
         """
@@ -227,7 +353,9 @@ class DataTracker:
         """Clear all historical data for a pod (e.g., when pod is terminated)."""
         if pod_id in self.data:
             del self.data[pod_id]
-            self.save_data()
+            # Note: With JSONL, we only remove from memory. 
+            # Full cleanup would require rewriting the file, which we avoid for performance.
+            # Old data will be cleaned up by retention policies.
     
     def cleanup_old_data(self, retention_config: Dict):
         """
@@ -441,12 +569,13 @@ class DataTracker:
         """Get human-readable retention information."""
         if not isinstance(retention_config, dict):
             # Fallback for invalid config
-            return {
+            fallback_config = {
                 'value': 0,
                 'unit': 'forever',
                 'display': 'Forever',
                 'seconds': 0
             }
+            return fallback_config
             
         value = retention_config.get('value', 0)
         unit = retention_config.get('unit', 'forever')
@@ -484,3 +613,29 @@ class DataTracker:
             'display': f"{value} {unit}",
             'seconds': seconds
         }
+    
+    def get_all_metrics_data(self) -> Dict[str, List[Dict]]:
+        """
+        Get all metrics data. If not loaded, load from file.
+        Simple helper function for easy data access.
+        
+        Returns:
+            Dict with pod_id as key and list of metrics as value
+        """
+        if not self.data:
+            self.load_data()
+        return self.data
+    
+    def get_pod_metrics(self, pod_id: str) -> List[Dict]:
+        """
+        Get metrics for a specific pod.
+        
+        Args:
+            pod_id: The ID of the pod
+            
+        Returns:
+            List of metric dictionaries for the pod, empty list if not found
+        """
+        if not self.data:
+            self.load_data()
+        return self.data.get(pod_id, [])

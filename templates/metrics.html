@@ -176,15 +176,10 @@
                         </select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small">📤 Export Data</label>
-                        <div class="btn-group w-100" role="group">
-                            <button type="button" class="btn btn-sm btn-outline-success" onclick="exportData('csv')">
-                                📊 CSV
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-info" onclick="exportData('json')">
-                                📄 JSON
-                            </button>
-                        </div>
+                        <label class="form-label small">💾 Backup Data</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="exportData()">
+                            📦 Download ZIP Backup
+                        </button>
                     </div>
                 </div>
             </div>
@@ -204,7 +199,7 @@
                                 <option value="">Select a pod to view graph...</option>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <select id="time-range" class="form-select form-select-sm">
                                 <option value="3600">Last Hour</option>
                                 <option value="14400">Last 4 Hours</option>
@@ -212,7 +207,14 @@
                                 <option value="604800">Last Week</option>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <select id="data-resolution" class="form-select form-select-sm">
+                                <option value="30min" selected>30-Minute Avg</option>
+                                <option value="raw">Raw Data</option>
+                                <option value="1hour">Hourly Avg</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
                             <button id="show-all-pods" class="btn btn-outline-primary btn-sm w-100">
                                 📊 Show All Pods
                             </button>
@@ -255,7 +257,7 @@ async function updateNextCollection() {
             const nextTime = data.next_collection_time;
             textElement.textContent = `Next collection at ${nextTime} (in ${data.seconds_remaining}s)`;
         } else if (data.monitoring_running) {
-            textElement.textContent = 'Collecting data now...';
+            textElement.textContent = 'Monitoring active - waiting for next collection...';
         } else {
             textElement.textContent = 'Not collecting data - monitoring inactive';
         }
@@ -384,14 +386,19 @@ async function loadPodOptions() {
 }
 
 // Load chart data
-async function loadChartData(podId, timeRange) {
+async function loadChartData(podId, timeRange, resolution = null) {
     if (!podId) return;
     
     const loading = document.getElementById('chart-loading');
     loading.style.display = 'block';
     
+    // Get resolution from selector if not provided
+    if (!resolution) {
+        resolution = document.getElementById('data-resolution').value;
+    }
+    
     try {
-        const response = await fetch(`/api/graph-data/${podId}?timeRange=${timeRange}`);
+        const response = await fetch(`/api/graph-data/${podId}?timeRange=${timeRange}&resolution=${resolution}`);
         const data = await response.json();
         
         if (metricsChart) {
@@ -489,6 +496,7 @@ async function showAllPods() {
     const singleContainer = document.getElementById('single-chart-container');
     const allContainer = document.getElementById('all-charts-container');
     const timeRange = document.getElementById('time-range').value;
+    const resolution = document.getElementById('data-resolution').value;
     
     console.log('Elements found:', {
         loading: !!loading,
@@ -573,7 +581,7 @@ async function showAllPods() {
             
             // Load chart data
             console.log(`Fetching data for pod ${pod.id}...`);
-            const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+            const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}&resolution=${resolution}`);
             console.log(`Data response status for ${pod.name}:`, response.status);
             const data = await response.json();
             console.log(`Data for ${pod.name}:`, data);
@@ -702,7 +710,8 @@ async function refreshAllPodsData() {
     }
     
     const timeRange = document.getElementById('time-range').value;
-    console.log(`Refreshing data for ${allPodsCharts.length} charts`);
+    const resolution = document.getElementById('data-resolution').value;
+    console.log(`Refreshing data for ${allPodsCharts.length} charts with resolution: ${resolution}`);
     
     try {
         // Update each existing chart with new data
@@ -717,7 +726,7 @@ async function refreshAllPodsData() {
             
             try {
                 // Fetch new data
-                const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}`);
+                const response = await fetch(`/api/graph-data/${pod.id}?timeRange=${timeRange}&resolution=${resolution}`);
                 const data = await response.json();
                 
                 if (data.error) {
@@ -784,6 +793,21 @@ document.getElementById('time-range').addEventListener('change', function() {
     }
 });
 
+// Data resolution change
+document.getElementById('data-resolution').addEventListener('change', function() {
+    const podId = document.getElementById('pod-selector').value;
+    const timeRange = document.getElementById('time-range').value;
+    const allContainer = document.getElementById('all-charts-container');
+    
+    if (allContainer.style.display === 'block') {
+        // If showing all pods, reload all charts with new resolution
+        showAllPods();
+    } else if (podId) {
+        // If showing single pod, reload single chart with new resolution
+        loadChartData(podId, timeRange, this.value);
+    }
+});
+
 // Add event listener for Show All Pods button
 document.addEventListener('DOMContentLoaded', function() {
     const showAllButton = document.getElementById('show-all-pods');
@@ -803,30 +827,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Export functionality
-function exportData(format) {
-    const timeFilter = document.getElementById('time-filter-select').value;
-    const podFilter = document.getElementById('pod-filter-select').value;
-    
-    // Build export URL
-    let exportUrl = `/api/export?format=${format}`;
-    
-    if (podFilter) {
-        exportUrl += `&pod_id=${encodeURIComponent(podFilter)}`;
-    }
-    
-    if (timeFilter !== 'all') {
-        exportUrl += `&duration=${timeFilter}`;
-    }
+// Export functionality - Downloads a ZIP backup of the entire data folder
+function exportData() {
+    // Simple export - just download the ZIP backup
+    const exportUrl = '/api/export';
     
     // Show loading state
-    const csvBtn = document.querySelector('button[onclick="exportData(\'csv\')"]');
-    const jsonBtn = document.querySelector('button[onclick="exportData(\'json\')"]');
-    const activeBtn = format === 'csv' ? csvBtn : jsonBtn;
-    const originalText = activeBtn.innerHTML;
+    const exportBtn = document.querySelector('button[onclick="exportData()"]');
+    const originalText = exportBtn.innerHTML;
     
-    activeBtn.innerHTML = '⏳ Exporting...';
-    activeBtn.disabled = true;
+    exportBtn.innerHTML = '⏳ Creating backup...';
+    exportBtn.disabled = true;
     
     // Create temporary link to download file
     const link = document.createElement('a');
@@ -838,8 +849,8 @@ function exportData(format) {
     
     // Reset button after delay
     setTimeout(() => {
-        activeBtn.innerHTML = originalText;
-        activeBtn.disabled = false;
+        exportBtn.innerHTML = originalText;
+        exportBtn.disabled = false;
     }, 2000);
 }
 
