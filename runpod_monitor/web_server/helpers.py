@@ -207,9 +207,18 @@ def get_latest_metric_time() -> Tuple[bool, float]:
                     if metric_time > latest_data_time:
                         latest_data_time = metric_time
         
-        # If we have data within the last 2 minutes, monitoring is running
+        # Check config to see if monitoring should be active
+        current_config = get_current_config()
+        config_monitoring_active = False
+        if current_config:
+            auto_stop = current_config.get('auto_stop', {})
+            # Monitoring is active if either enabled OR monitor_only is true
+            config_monitoring_active = auto_stop.get('enabled', False) or auto_stop.get('monitor_only', False)
+        
+        # If we have data within the last 2 minutes, OR config says monitoring is active
         current_time = time.time()
-        monitoring_running = latest_data_time > current_time - 120
+        data_is_recent = latest_data_time > current_time - 120
+        monitoring_running = data_is_recent or config_monitoring_active
             
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         monitoring_running = False

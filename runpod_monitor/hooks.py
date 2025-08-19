@@ -33,6 +33,36 @@ def initialize_directories_hook() -> None:
         print(f"   📁 Ensured directory exists: {dir_path}")
 
 
+# Global auto-stop tracker instance (initialized by hook)
+_auto_stop_tracker = None
+
+
+def initialize_auto_stop_tracker_hook() -> None:
+    """
+    Initialize the auto-stop tracker from existing JSONL data.
+    This should be called once at startup.
+    """
+    global _auto_stop_tracker
+    from .auto_stop_tracker import AutoStopTracker
+    
+    # Initialize tracker
+    _auto_stop_tracker = AutoStopTracker(data_dir='./data')
+    
+    # Load thresholds from config (would normally come from main.py)
+    # For now, use defaults
+    thresholds = {
+        'max_cpu_percent': 1,
+        'max_gpu_percent': 1,
+        'max_memory_percent': 1,
+        'duration': 3600,
+        'detect_no_change': False
+    }
+    
+    # Initialize from existing JSONL
+    _auto_stop_tracker.initialize_from_jsonl('./data/pod_metrics.jsonl', thresholds)
+    _auto_stop_tracker.set_thresholds(thresholds)
+
+
 # ============================================================================
 # PRE-WRITE HOOKS (Transform or validate metrics before writing)
 # ============================================================================
@@ -89,6 +119,36 @@ def round_numbers_hook(metric_point: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================================
 # POST-WRITE HOOKS (Additional actions after writing)
 # ============================================================================
+
+def update_auto_stop_counter_hook(metric_point: Dict[str, Any], file_path: str) -> None:
+    """
+    Update auto-stop counter after writing a metric.
+    This maintains the fast counter-based tracking system.
+    
+    Args:
+        metric_point: The metric that was just written
+        file_path: Path to the JSONL file (not used but required by hook interface)
+    """
+    global _auto_stop_tracker
+    
+    if _auto_stop_tracker is None:
+        # Tracker not initialized, skip
+        return
+    
+    # Update the counter with the new metric
+    _auto_stop_tracker.update_counter(metric_point)
+    
+    # Check if this pod now meets auto-stop conditions
+    pod_id = metric_point.get('pod_id')
+    if pod_id:
+        should_stop, counter_info = _auto_stop_tracker.check_auto_stop(pod_id)
+        if should_stop and counter_info:
+            pod_name = counter_info.get('pod_name', pod_id)
+            duration = counter_info.get('first_below_epoch')
+            if duration:
+                time_below = int(time.time() - duration)
+                print(f"⚠️  AUTO-STOP: Pod '{pod_name}' has been idle for {time_below}s")
+
 
 def auto_compact_hook(metric_point: Dict[str, Any], file_path: str) -> None:
     """

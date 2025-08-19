@@ -98,14 +98,22 @@ def load_config(config_path: str = "config.yaml"):
         )
         print(f"🗄️  Data tracker initialized with storage: {storage_config.get('data_dir', './data')}")
         
-        # Add and run onStart hooks (example)
-        try:
-            from runpod_monitor import hooks
-            data_tracker.add_on_start_hook(hooks.hello_world_hook)
-            data_tracker.start()
-        except ImportError:
-            # Handle case where running as script directly
-            pass
+        # Configure auto-stop tracker if enabled
+        auto_stop_config = config.get('auto_stop', {})
+        if auto_stop_config.get('enabled') or auto_stop_config.get('monitor_only'):
+            thresholds = auto_stop_config.get('thresholds', {})
+            excluded_pods = auto_stop_config.get('exclude_pods', [])
+            data_tracker.initialize_auto_stop_tracker(thresholds, excluded_pods)
+            
+            try:
+                from runpod_monitor import hooks
+                data_tracker.add_post_write_hook(hooks.update_auto_stop_counter_hook)
+                print(f"🎯 Auto-stop tracker initialized with fast counters")
+            except ImportError:
+                pass
+        
+        # Start the metric writer
+        data_tracker.start()
     
     return config
 
@@ -560,8 +568,15 @@ def monitor_pods():
                             monitor_only = auto_stop_config.get('monitor_only', False)
                             
                             if (enabled or monitor_only) and should_monitor_pod(pod):
-                                exclude_list = auto_stop_config.get('exclude_pods', [])
-                                if data_tracker.check_auto_stop_conditions(pod_id, auto_stop_config.get('thresholds', {}), exclude_list):
+                                # Use fast counter-based check if available
+                                if data_tracker.auto_stop_tracker:
+                                    should_stop = data_tracker.check_auto_stop_conditions_fast(pod_id)
+                                else:
+                                    # Fallback to old method
+                                    exclude_list = auto_stop_config.get('exclude_pods', [])
+                                    should_stop = data_tracker.check_auto_stop_conditions(pod_id, auto_stop_config.get('thresholds', {}), exclude_list)
+                                
+                                if should_stop:
                                     if monitor_only:
                                         print(f"🔍 MONITOR-ONLY: Pod '{pod_name}' ({pod_id}) meets auto-stop conditions (would be stopped)")
                                     elif enabled:
@@ -647,9 +662,19 @@ def main():
         metrics_file=storage_config.get('metrics_file', 'pod_metrics.jsonl')
     )
     
-    # Add and run onStart hooks (example)
-    from runpod_monitor import hooks
-    data_tracker.add_on_start_hook(hooks.hello_world_hook)
+    # Configure auto-stop tracker with thresholds from config
+    auto_stop_config = config.get('auto_stop', {})
+    if auto_stop_config.get('enabled') or auto_stop_config.get('monitor_only'):
+        thresholds = auto_stop_config.get('thresholds', {})
+        excluded_pods = auto_stop_config.get('exclude_pods', [])
+        data_tracker.initialize_auto_stop_tracker(thresholds, excluded_pods)
+        
+        # Add the auto-stop counter update hook
+        from runpod_monitor import hooks
+        data_tracker.add_post_write_hook(hooks.update_auto_stop_counter_hook)
+        print(f"🎯 Auto-stop tracker initialized with fast counters")
+    
+    # Start the metric writer (runs on-start hooks)
     data_tracker.start()
     
     # If no arguments provided, default to interactive mode

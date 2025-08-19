@@ -6,12 +6,13 @@ import io
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
 from .metric_writer import MetricWriter
+from .auto_stop_tracker import AutoStopTracker
 
 
 class DataTracker:
     """Tracks pod metrics over time and manages historical data."""
     
-    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.jsonl", use_metric_writer: bool = True):
+    def __init__(self, data_dir: str = "./data", metrics_file: str = "pod_metrics.jsonl", use_metric_writer: bool = True, use_auto_stop_tracker: bool = True):
         self.data_dir = data_dir
         # Use JSONL format by default
         self.metrics_file = os.path.join(data_dir, metrics_file)
@@ -20,6 +21,10 @@ class DataTracker:
         # Initialize MetricWriter if enabled
         self.use_metric_writer = use_metric_writer
         self.metric_writer = MetricWriter() if use_metric_writer else None
+        
+        # Initialize AutoStopTracker if enabled
+        self.use_auto_stop_tracker = use_auto_stop_tracker
+        self.auto_stop_tracker = AutoStopTracker(data_dir=data_dir) if use_auto_stop_tracker else None
         
         # Ensure data directory exists
         os.makedirs(data_dir, exist_ok=True)
@@ -49,6 +54,22 @@ class DataTracker:
         """Start the metric writer (runs on-start hooks)."""
         if self.metric_writer:
             self.metric_writer.start()
+    
+    def initialize_auto_stop_tracker(self, thresholds: Dict, excluded_pods: List[str] = None):
+        """
+        Initialize the auto-stop tracker with thresholds and existing data.
+        
+        Args:
+            thresholds: Auto-stop thresholds
+            excluded_pods: List of pods to exclude
+        """
+        if self.auto_stop_tracker:
+            self.auto_stop_tracker.set_thresholds(thresholds, excluded_pods)
+            self.auto_stop_tracker.initialize_from_jsonl(self.metrics_file, thresholds)
+            
+            # Also update the hook's tracker reference
+            import runpod_monitor.hooks as hooks
+            hooks._auto_stop_tracker = self.auto_stop_tracker
     
     def migrate_json_to_jsonl(self):
         """One-time migration from JSON to JSONL format."""
@@ -208,6 +229,21 @@ class DataTracker:
             metric for metric in self.data[pod_id]
             if metric.get("epoch", 0) >= cutoff_time
         ]
+    
+    def check_auto_stop_conditions_fast(self, pod_id: str) -> bool:
+        """
+        Fast O(1) check if a pod meets auto-stop conditions using counters.
+        
+        Args:
+            pod_id: Pod ID to check
+            
+        Returns:
+            True if pod should be stopped, False otherwise
+        """
+        if self.auto_stop_tracker:
+            should_stop, _ = self.auto_stop_tracker.check_auto_stop(pod_id)
+            return should_stop
+        return False
     
     def check_auto_stop_conditions(self, pod_id: str, thresholds: Dict, excluded_pods: List[str] = None) -> bool:
         """
