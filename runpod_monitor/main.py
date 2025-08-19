@@ -91,6 +91,10 @@ def load_config(config_path: str = "config.yaml"):
                 if os.getenv("RUNPOD_API_KEY"):
                     config["api"]["key"] = os.getenv("RUNPOD_API_KEY")
                 
+                # MIGRATION: Ensure we use .jsonl instead of .json
+                if config.get('storage', {}).get('metrics_file') == 'pod_metrics.json':
+                    config['storage']['metrics_file'] = 'pod_metrics.jsonl'
+                
                 # Save the new config file
                 with open(config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
