@@ -54,105 +54,6 @@ def get_pod_statuses() -> Tuple[Set[str], Dict[str, Dict[str, Any]]]:
     return current_pod_ids, current_pod_statuses
 
 
-def calculate_auto_stop_predictions(data: Dict[str, Any], current_config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Calculate which pods are close to being auto-stopped based on thresholds.
-    
-    Args:
-        data: Metrics data dictionary
-        current_config: Current configuration dictionary
-        
-    Returns:
-        List of prediction dictionaries with pod info and progress towards auto-stop
-    """
-    try:
-        from ..main import fetch_pods
-    except ImportError:
-        from runpod_monitor.main import fetch_pods
-    
-    thresholds = current_config.get('auto_stop', {}).get('thresholds', {})
-    max_cpu = thresholds.get('max_cpu_percent', 5)
-    max_gpu = thresholds.get('max_gpu_percent', 5)
-    max_memory = thresholds.get('max_memory_percent', 20)
-    duration = thresholds.get('duration', 1800)
-    
-    sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60)
-    points_needed = duration // sampling_freq
-    
-    current_pods = fetch_pods()
-    exclude_list = current_config.get('auto_stop', {}).get('exclude_pods', [])
-    pod_names = {pod['id']: pod['name'] for pod in current_pods} if current_pods else {}
-    
-    predictions = []
-    
-    for pod_id, metrics_list in data.items():
-        if not metrics_list or pod_id in exclude_list:
-            continue
-            
-        pod_name = pod_names.get(pod_id, f"Pod {pod_id[:8]}")
-        
-        # Only consider RUNNING pods for auto-stop predictions
-        latest_status = metrics_list[-1].get('status', 'UNKNOWN')
-        if latest_status != 'RUNNING':
-            continue
-        
-        # Only check pods that are currently active
-        if pod_id not in pod_names:
-            continue
-        
-        # Calculate averages for the time period
-        cutoff_time = time.time() - duration
-        recent_metrics = [
-            metric for metric in metrics_list
-            if metric.get('epoch', 0) >= cutoff_time and metric.get('status') == 'RUNNING'
-        ]
-        
-        avg_cpu = avg_memory = avg_gpu = 0
-        if recent_metrics:
-            total_cpu = sum(metric.get('cpu_percent', 0) for metric in recent_metrics)
-            total_memory = sum(metric.get('memory_percent', 0) for metric in recent_metrics)
-            total_gpu = sum(metric.get('gpu_percent', 0) for metric in recent_metrics)
-            count = len(recent_metrics)
-            
-            avg_cpu = round(total_cpu / count, 1)
-            avg_memory = round(total_memory / count, 1)
-            avg_gpu = round(total_gpu / count, 1)
-        
-        # Count consecutive RUNNING points meeting criteria
-        meeting_criteria = 0
-        
-        for metric in reversed(metrics_list):
-            status = metric.get('status')
-            
-            if status != 'RUNNING':
-                break
-                
-            cpu = metric.get('cpu_percent', 0)
-            gpu = metric.get('gpu_percent', 0)
-            memory = metric.get('memory_percent', 0)
-            
-            if cpu <= max_cpu and gpu <= max_gpu and memory <= max_memory:
-                meeting_criteria += 1
-                if meeting_criteria >= points_needed:
-                    break
-            else:
-                meeting_criteria = 0
-        
-        if meeting_criteria > 0:
-            remaining_points = max(0, points_needed - meeting_criteria)
-            predictions.append({
-                'pod_id': pod_id,
-                'pod_name': pod_name,
-                'meeting_criteria': meeting_criteria,
-                'remaining_points': remaining_points,
-                'total_needed': points_needed,
-                'progress_percent': (meeting_criteria / points_needed) * 100,
-                'avg_cpu': avg_cpu,
-                'avg_memory': avg_memory,
-                'avg_gpu': avg_gpu
-            })
-    
-    return predictions
 
 
 @router.get("/metrics")
@@ -241,142 +142,174 @@ async def get_metrics(request: Request):
 
 
 @router.get("/api/raw-data")
-async def get_raw_data(request: Request, page: int = 1, status_filter: str = None):
+async def get_raw_data(
+    request: Request, 
+    page: int = Query(1, ge=1),
+    pod_id: Optional[str] = Query(None),
+    resolution: str = Query("1hour", regex="^(raw|30min|1hour)$")
+):
     """
-    Get raw data points as HTML table with pagination and optional status filtering.
-    Shows individual metric data points for debugging and detailed analysis.
+    Get metrics table with pod selection and resolution options.
     
     Args:
         request: FastAPI request object
-        page: Page number for pagination (default 1)
-        status_filter: Optional filter for pod status (active, exited, terminated)
+        page: Page number for pagination
+        pod_id: Specific pod ID or None for all pods
+        resolution: Data resolution - raw, 30min, or 1hour
         
     Returns:
-        HTML response with paginated raw data table
+        HTML response with formatted table
     """
-    data = load_metrics_data()
-    if not data:
-        return HTMLResponse("<p>No metrics data file found</p>")
+    try:
+        from runpod_monitor.pod_metrics_manager import PodMetricsManager
+        from runpod_monitor.main import fetch_pods
+    except ImportError:
+        return HTMLResponse("<p>Error loading modules</p>")
     
-    # Get current pods from API to determine actual status
-    current_pod_ids, current_pod_statuses = get_pod_statuses()
+    manager = PodMetricsManager(base_dir='./data/pods')
     
-    # Process all historical data and determine real status
-    all_raw_data = []
-    for pod_id, metrics_list in data.items():
-        for metric in metrics_list:
-            # Use the STORED status from each individual data point
-            stored_status = metric.get('status', 'UNKNOWN')
-            stored_name = metric.get('name', 'Unknown')
-            stored_cost = metric.get('cost_per_hr', 0)
+    # Map resolution to file type
+    file_type_map = {
+        "raw": "raw",
+        "30min": "30min",
+        "1hour": "1hour"
+    }
+    file_type = file_type_map.get(resolution, "1hour")
+    
+    # Get current pods from API
+    current_pods = fetch_pods()
+    if not current_pods:
+        return HTMLResponse("<p>No pods available</p>")
+    
+    # Create pod name lookup
+    pod_names = {p['id']: p['name'] for p in current_pods}
+    pod_statuses = {p['id']: p.get('desiredStatus', 'UNKNOWN') for p in current_pods}
+    
+    # Collect metrics
+    all_metrics = []
+    
+    if pod_id and pod_id != "all":
+        # Single pod selected
+        metrics = manager.read_metrics(pod_id, file_type=file_type)
+        if metrics:
+            pod_name = pod_names.get(pod_id, pod_id[:8])
+            pod_status = pod_statuses.get(pod_id, 'TERMINATED')
             
-            # Only override if the stored data is incomplete or pod no longer exists
-            if stored_status == 'UNKNOWN' or stored_status == '':
-                if pod_id in current_pod_ids:
-                    # Use current API data for incomplete records
-                    actual_status = current_pod_statuses[pod_id]['status']
-                    actual_name = current_pod_statuses[pod_id]['name']
-                    actual_cost = current_pod_statuses[pod_id]['cost_per_hr']
-                else:
-                    # Pod no longer exists and no stored status
-                    actual_status = 'TERMINATED'
-                    actual_name = stored_name
-                    actual_cost = stored_cost
-            else:
-                # Use the stored status - this preserves historical accuracy
-                actual_status = stored_status
-                actual_name = stored_name
-                actual_cost = stored_cost
+            for metric in metrics:
+                metric['pod_name'] = pod_name
+                metric['pod_id'] = pod_id
+                metric['current_status'] = pod_status
+            all_metrics = metrics
+    else:
+        # Show all pods - merge data from multiple pods
+        for pod in current_pods:
+            p_id = pod['id']
+            p_name = pod['name']
+            p_status = pod.get('desiredStatus', 'UNKNOWN')
             
-            # Update name/cost if pod still exists (in case name changed)
-            if pod_id in current_pod_ids and actual_status != 'TERMINATED':
-                actual_name = current_pod_statuses[pod_id]['name']
-                actual_cost = current_pod_statuses[pod_id]['cost_per_hr']
-            
-            # Create enhanced metric with actual status
-            enhanced_metric = metric.copy()
-            enhanced_metric['actual_status'] = actual_status
-            enhanced_metric['actual_name'] = actual_name
-            enhanced_metric['actual_cost'] = actual_cost
-            
-            all_raw_data.append(enhanced_metric)
+            # Only include RUNNING and recently EXITED pods
+            if p_status in ['RUNNING', 'EXITED', 'STOPPED']:
+                # Read limited metrics per pod to prevent huge tables
+                metrics = manager.read_metrics(p_id, file_type=file_type, limit=50)
+                if metrics:
+                    for metric in metrics:
+                        metric['pod_name'] = p_name
+                        metric['pod_id'] = p_id
+                        metric['current_status'] = p_status
+                    all_metrics.extend(metrics)
     
-    # Sort by timestamp, newest first
-    all_raw_data.sort(key=lambda x: x.get('epoch', 0), reverse=True)
+    # Sort by timestamp/epoch
+    if file_type in ["30min", "1hour"]:
+        all_metrics.sort(key=lambda x: x.get('window_start_epoch', 0), reverse=True)
+    else:
+        all_metrics.sort(key=lambda x: x.get('epoch', 0), reverse=True)
     
-    if not all_raw_data:
-        return HTMLResponse("<p>No raw data points available yet</p>")
+    if not all_metrics:
+        return HTMLResponse("<p>No data available for selected options</p>")
     
-    # Apply status filter
-    if status_filter:
-        if status_filter == 'active':
-            all_raw_data = [m for m in all_raw_data if m.get('actual_status') == 'RUNNING']
-        elif status_filter == 'exited':
-            all_raw_data = [m for m in all_raw_data if m.get('actual_status') in ['STOPPED', 'EXITED']]
-        elif status_filter == 'terminated':
-            all_raw_data = [m for m in all_raw_data if m.get('actual_status') == 'TERMINATED']
-    
-    # Pagination settings
+    # Pagination
     ITEMS_PER_PAGE = 50
-    total_items = len(all_raw_data)
+    total_items = len(all_metrics)
     total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     
-    # Ensure page is within bounds
     page = max(1, min(page, total_pages if total_pages > 0 else 1))
-    
-    # Calculate pagination slice
     start_idx = (page - 1) * ITEMS_PER_PAGE
     end_idx = start_idx + ITEMS_PER_PAGE
-    paginated_data = all_raw_data[start_idx:end_idx]
+    paginated_data = all_metrics[start_idx:end_idx]
     
-    # Count by status for filter buttons
-    total_count = len(all_raw_data)
-    active_count = len([m for m in all_raw_data if m.get('actual_status') == 'RUNNING'])
-    exited_count = len([m for m in all_raw_data if m.get('actual_status') in ['STOPPED', 'EXITED']])
-    terminated_count = len([m for m in all_raw_data if m.get('actual_status') == 'TERMINATED'])
+    # Build HTML
+    html = f'''
+    <div class="mb-3">
+        <div class="row">
+            <div class="col-md-4">
+                <label class="form-label small">Pod Selection</label>
+                <select id="table-pod-selector" class="form-select form-select-sm" 
+                        hx-get="/api/raw-data" 
+                        hx-target="#raw-data-table" 
+                        hx-trigger="change"
+                        hx-include="#table-resolution-selector"
+                        name="pod_id">
+                    <option value="all" {"selected" if not pod_id or pod_id == "all" else ""}>All Pods</option>
+    '''
     
-    # Build HTML with filter buttons and pagination
-    html = generate_raw_data_filters_html(
-        page, status_filter, total_count, active_count, exited_count, 
-        terminated_count, start_idx, end_idx, total_items
-    )
+    for pod in current_pods:
+        selected = "selected" if pod_id == pod['id'] else ""
+        html += f'<option value="{pod["id"]}" {selected}>{pod["name"]}</option>'
     
-    # Pagination controls
     html += f'''
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small">Resolution</label>
+                <select id="table-resolution-selector" class="form-select form-select-sm"
+                        hx-get="/api/raw-data"
+                        hx-target="#raw-data-table"
+                        hx-trigger="change"
+                        hx-include="#table-pod-selector"
+                        name="resolution">
+                    <option value="1hour" {"selected" if resolution == "1hour" else ""}>Hourly</option>
+                    <option value="30min" {"selected" if resolution == "30min" else ""}>30 Minutes</option>
+                    <option value="raw" {"selected" if resolution == "raw" else ""}>Raw (1 min)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <small class="text-muted">
+                    Showing {start_idx + 1}-{min(end_idx, total_items)} of {total_items} records
+                </small>
+            </div>
+        </div>
+    </div>
+    
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <small class="text-muted">Page {page} of {total_pages}</small>
         </div>
-        <div>
-            <div class="btn-group" role="group">
+        <div class="btn-group" role="group">
     '''
     
     # Previous page button
     if page > 1:
-        prev_url = f"/api/raw-data?page={page-1}"
-        if status_filter:
-            prev_url += f"&status_filter={status_filter}"
+        pod_param = f"&pod_id={pod_id}" if pod_id else ""
+        prev_url = f"/api/raw-data?page={page-1}&resolution={resolution}{pod_param}"
         html += f'''
-                <button type="button" class="btn btn-sm btn-outline-secondary" 
-                        hx-get="{prev_url}" hx-target="#raw-data-table" hx-swap="innerHTML">
-                    « Previous
-                </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" 
+                    hx-get="{prev_url}" hx-target="#raw-data-table">
+                « Previous
+            </button>
         '''
     
     # Next page button
     if page < total_pages:
-        next_url = f"/api/raw-data?page={page+1}"
-        if status_filter:
-            next_url += f"&status_filter={status_filter}"
+        pod_param = f"&pod_id={pod_id}" if pod_id else ""
+        next_url = f"/api/raw-data?page={page+1}&resolution={resolution}{pod_param}"
         html += f'''
-                <button type="button" class="btn btn-sm btn-outline-secondary" 
-                        hx-get="{next_url}" hx-target="#raw-data-table" hx-swap="innerHTML">
-                    Next »
-                </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" 
+                    hx-get="{next_url}" hx-target="#raw-data-table">
+                Next »
+            </button>
         '''
     
     html += '''
-            </div>
         </div>
     </div>
     
@@ -384,59 +317,101 @@ async def get_raw_data(request: Request, page: int = 1, status_filter: str = Non
         <table class="table table-sm table-striped">
             <thead class="table-dark">
                 <tr>
+    '''
+    
+    # Table headers based on resolution
+    if file_type in ["30min", "1hour"]:
+        html += '''
+                    <th>Time Window</th>
+                    <th>Pod Name</th>
+                    <th>Status</th>
+                    <th>CPU Avg%</th>
+                    <th>GPU Avg%</th>
+                    <th>Memory Avg%</th>
+                    <th>Data Points</th>
+        '''
+    else:
+        html += '''
                     <th>Timestamp</th>
                     <th>Pod Name</th>
-                    <th>Pod ID</th>
                     <th>Status</th>
                     <th>CPU%</th>
                     <th>GPU%</th>
                     <th>Memory%</th>
                     <th>Uptime</th>
-                    <th>Cost/Hr</th>
+        '''
+    
+    html += '''
                 </tr>
             </thead>
             <tbody>
     '''
     
-    # Use paginated data
+    # Table rows
     for metric in paginated_data:
-        timestamp = datetime.fromisoformat(metric.get('timestamp', '')).strftime('%H:%M:%S') if metric.get('timestamp') else 'Unknown'
-        uptime_hours = metric.get('uptime_seconds', 0) // 3600
-        uptime_mins = (metric.get('uptime_seconds', 0) % 3600) // 60
+        pod_name = metric.get('pod_name', 'Unknown')
+        current_status = metric.get('current_status', metric.get('status', 'UNKNOWN'))
         
-        # Use actual status for display
-        actual_status = metric.get('actual_status', 'UNKNOWN')
-        actual_name = metric.get('actual_name', metric.get('name', 'Unknown'))
-        actual_cost = metric.get('actual_cost', metric.get('cost_per_hr', 0))
-        
-        # Set badge color based on actual status
-        if actual_status == 'RUNNING':
+        # Status badge color
+        if current_status == 'RUNNING':
             badge_color = 'success'
-        elif actual_status in ['STOPPED', 'EXITED']:
+        elif current_status in ['STOPPED', 'EXITED']:
             badge_color = 'warning'
-        elif actual_status == 'TERMINATED':
-            badge_color = 'danger'
         else:
             badge_color = 'secondary'
         
-        html += f'''
+        if file_type in ["30min", "1hour"]:
+            # Compacted data display
+            window_start = metric.get('window_start', '')
+            window_end = metric.get('window_end', '')
+            
+            # Format time window
+            try:
+                start_time = datetime.fromisoformat(window_start).strftime('%H:%M')
+                end_time = datetime.fromisoformat(window_end).strftime('%H:%M')
+                time_display = f"{start_time} - {end_time}"
+            except:
+                time_display = f"{window_start[:5]} - {window_end[:5]}"
+            
+            html += f'''
                 <tr>
-                    <td><small>{timestamp}</small></td>
-                    <td><small>{actual_name}</small></td>
-                    <td><small class="text-muted">{metric.get('pod_id', 'Unknown')[:8]}...</small></td>
-                    <td><span class="badge bg-{badge_color}">{actual_status}</span></td>
+                    <td><small>{time_display}</small></td>
+                    <td><small>{pod_name}</small></td>
+                    <td><span class="badge bg-{badge_color}">{current_status}</span></td>
+                    <td>{metric.get('cpu_avg', 0):.1f}%</td>
+                    <td>{metric.get('gpu_avg', 0):.1f}%</td>
+                    <td>{metric.get('memory_avg', 0):.1f}%</td>
+                    <td><small>{metric.get('metrics_count', 0)}</small></td>
+                </tr>
+            '''
+        else:
+            # Raw data display
+            timestamp = metric.get('timestamp', '')
+            try:
+                time_display = datetime.fromisoformat(timestamp).strftime('%H:%M:%S')
+            except:
+                time_display = timestamp[-8:] if len(timestamp) >= 8 else timestamp
+            
+            uptime_seconds = metric.get('uptime_seconds', 0)
+            uptime_hours = uptime_seconds // 3600
+            uptime_mins = (uptime_seconds % 3600) // 60
+            
+            html += f'''
+                <tr>
+                    <td><small>{time_display}</small></td>
+                    <td><small>{pod_name}</small></td>
+                    <td><span class="badge bg-{badge_color}">{current_status}</span></td>
                     <td>{metric.get('cpu_percent', 0)}%</td>
                     <td>{metric.get('gpu_percent', 0)}%</td>
                     <td>{metric.get('memory_percent', 0)}%</td>
                     <td><small>{uptime_hours}h {uptime_mins}m</small></td>
-                    <td><small>${actual_cost}</small></td>
                 </tr>
-        '''
+            '''
     
     if not paginated_data:
         html += '''
                 <tr>
-                    <td colspan="9" class="text-center text-muted">
+                    <td colspan="7" class="text-center text-muted">
                         <em>No data points found</em>
                     </td>
                 </tr>
@@ -470,13 +445,41 @@ async def get_auto_stop_predictions(request: Request):
     
     monitor_only = current_config.get('auto_stop', {}).get('monitor_only', False)
     
-    # Read data from file
-    data = load_metrics_data()
-    if not data:
-        return HTMLResponse("<p class='text-muted'>No data available</p>")
+    # Read counters from file instead of loading all metrics
+    import os
+    counters_file = './data/auto_stop_counters.json'
     
-    # Calculate predictions
-    predictions = calculate_auto_stop_predictions(data, current_config)
+    if not os.path.exists(counters_file):
+        return HTMLResponse("<p class='text-muted'>No auto-stop tracking data available</p>")
+    
+    try:
+        with open(counters_file, 'r') as f:
+            counters = json.load(f)
+    except Exception as e:
+        return HTMLResponse(f"<p class='text-muted'>Error loading counters: {e}</p>")
+    
+    # Calculate predictions from counters
+    thresholds = current_config.get('auto_stop', {}).get('thresholds', {})
+    duration = thresholds.get('duration', 1800)
+    sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60)
+    points_needed = duration // sampling_freq
+    
+    predictions = []
+    for pod_id, counter_data in counters.items():
+        consecutive = counter_data.get('consecutive_below_threshold', 0)
+        if consecutive > 0:
+            remaining_points = max(0, points_needed - consecutive)
+            predictions.append({
+                'pod_id': pod_id,
+                'pod_name': counter_data.get('pod_name', pod_id[:8]),
+                'meeting_criteria': consecutive,
+                'remaining_points': remaining_points,
+                'total_needed': points_needed,
+                'progress_percent': (consecutive / points_needed) * 100,
+                'avg_cpu': counter_data.get('last_metrics', {}).get('cpu', 0),
+                'avg_memory': counter_data.get('last_metrics', {}).get('memory', 0),
+                'avg_gpu': counter_data.get('last_metrics', {}).get('gpu', 0)
+            })
     
     if not predictions:
         return HTMLResponse("<p class='text-muted'>No pods currently approaching auto-stop thresholds</p>")
@@ -567,12 +570,20 @@ async def get_graph_pods():
     """
     print("📊 Graph pods API called")
     
-    data = load_metrics_data()
-    if not data:
-        print("📊 No metrics data available")
+    # Instead of loading all data, just get pod list from PodMetricsManager
+    try:
+        from ..pod_metrics_manager import PodMetricsManager
+    except ImportError:
+        from runpod_monitor.pod_metrics_manager import PodMetricsManager
+    
+    manager = PodMetricsManager(base_dir='./data/pods')
+    pod_dirs = manager.get_pod_list()
+    
+    if not pod_dirs:
+        print("📊 No pod directories found")
         return JSONResponse([])
     
-    print(f"📊 Loaded data for {len(data)} pods from file")
+    print(f"📊 Found {len(pod_dirs)} pods with data")
     
     # Get current active pods
     try:
@@ -584,18 +595,19 @@ async def get_graph_pods():
     print(f"📊 Found {len(current_pods) if current_pods else 0} active pods from API")
     
     if not current_pods:
-        # If can't fetch from API, return all pods with data
+        # If can't fetch from API, return all pods with data directories
         print("📊 API fetch failed, returning all pods with data")
         pods_with_data = []
-        for pod_id, metrics in data.items():
-            if metrics:
-                # Get pod name from latest metric
-                latest_metric = metrics[-1] if metrics else {}
-                pod_name = latest_metric.get('name', pod_id[:8] + '...')
-                pods_with_data.append({
-                    'id': pod_id,
-                    'name': pod_name
-                })
+        for pod_id in pod_dirs:
+            # Try to get name from a recent metric
+            recent_metrics = manager.read_metrics(pod_id, file_type="raw", limit=1)
+            pod_name = pod_id[:8] + '...'
+            if recent_metrics:
+                pod_name = recent_metrics[-1].get('name', pod_name)
+            pods_with_data.append({
+                'id': pod_id,
+                'name': pod_name
+            })
         print(f"📊 Returning {len(pods_with_data)} pods with data")
         return JSONResponse(pods_with_data)
     
@@ -603,8 +615,8 @@ async def get_graph_pods():
     
     # Return pods that have data and are currently active
     pods_with_data = []
-    for pod_id, metrics in data.items():
-        if pod_id in active_pod_names and metrics:
+    for pod_id in pod_dirs:
+        if pod_id in active_pod_names:
             pods_with_data.append({
                 'id': pod_id,
                 'name': active_pod_names[pod_id]

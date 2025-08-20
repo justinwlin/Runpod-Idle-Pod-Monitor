@@ -82,15 +82,18 @@ def initialize_pod_metrics_manager_hook() -> None:
     if os.path.exists(main_jsonl):
         pod_counts = _pod_metrics_manager.initialize_from_main_jsonl(main_jsonl)
         
-        # Run initial compaction for all pods that have data
-        if pod_counts:
-            print("🔄 Running startup compaction for all pods...")
+        # Skip startup compaction by default - it's too slow
+        # Compaction will happen naturally as new data comes in
+        if pod_counts and os.getenv('ENABLE_STARTUP_COMPACTION', 'false').lower() == 'true':
+            print("🔄 Running startup compaction for all pods (this may take a while)...")
             for pod_id, count in pod_counts.items():
                 if count >= 30:  # Only compact if we have enough data
                     windows_30, _ = _pod_metrics_manager.compact_metrics(pod_id, 30)
                     windows_60, _ = _pod_metrics_manager.compact_metrics(pod_id, 60)
                     if windows_30 > 0 or windows_60 > 0:
                         print(f"   ✅ Compacted {pod_id}: {windows_30} 30-min, {windows_60} 60-min windows")
+        else:
+            print("⚡ Skipping startup compaction for faster boot (set ENABLE_STARTUP_COMPACTION=true to enable)")
     else:
         print("📭 No existing metrics to initialize from")
 

@@ -252,7 +252,8 @@ def fetch_pods():
         response = requests.post(
             config["api"]["graphql_url"],
             headers=get_headers(),
-            json={"query": query}
+            json={"query": query},
+            timeout=30  # 30 second timeout for API calls
         )
         
         if response.status_code == 200:
@@ -330,7 +331,7 @@ def start_pod_rest(pod_id):
     try:
         url = f"{config['api']['rest_url']}/pods/{pod_id}/start"
         
-        response = requests.post(url, headers=get_headers())
+        response = requests.post(url, headers=get_headers(), timeout=30)
         
         if response.status_code == 200:
             return {"success": True, "message": "Pod started successfully"}
@@ -362,7 +363,8 @@ def execute_mutation(mutation, variables):
         response = requests.post(
             config["api"]["graphql_url"],
             headers=get_headers(),
-            json={"query": mutation, "variables": variables}
+            json={"query": mutation, "variables": variables},
+            timeout=30
         )
         
         if response.status_code == 200:

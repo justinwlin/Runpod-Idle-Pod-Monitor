@@ -5,7 +5,8 @@ Monitor and auto-manage your RunPod instances with a simple web interface.
 ## Version
 1.0: JSON based file
 2.0: Data Migration + Hooks + Data compaction for graphs
-
+2.1: Attempt to fix hanging code on startup server
+2.2: Beta Version of Better Memory Management
 ----
 Runpod Image:
 https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1

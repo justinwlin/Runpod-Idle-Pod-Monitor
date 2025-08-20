@@ -18,6 +18,10 @@ class DataTracker:
         self.metrics_file = os.path.join(data_dir, metrics_file)
         self.data: Dict[str, List[Dict]] = {}
         
+        # Cache files for avoiding full data loads
+        self.summaries_cache_file = os.path.join(data_dir, "pod_summaries_cache.json")
+        self.summaries_cache = {}
+        
         # Initialize MetricWriter if enabled
         self.use_metric_writer = use_metric_writer
         self.metric_writer = MetricWriter() if use_metric_writer else None
@@ -32,8 +36,14 @@ class DataTracker:
         # Run migration if needed (from JSON to JSONL)
         self.migrate_json_to_jsonl()
         
-        # Load existing data
-        self.load_data()
+        # Initialize empty data structure
+        self.data = {}
+        
+        # Don't load all data on startup - we'll only load what we need
+        # self.load_data()  # REMOVED - unnecessary for append-only operations
+        
+        # Load summaries cache instead
+        self.load_summaries_cache()
     
     def add_on_start_hook(self, func):
         """Add an on-start hook to the metric writer."""
@@ -70,6 +80,60 @@ class DataTracker:
             # Also update the hook's tracker reference
             import runpod_monitor.hooks as hooks
             hooks._auto_stop_tracker = self.auto_stop_tracker
+    
+    def load_summaries_cache(self):
+        """Load pod summaries from cache file."""
+        if os.path.exists(self.summaries_cache_file):
+            try:
+                with open(self.summaries_cache_file, 'r') as f:
+                    self.summaries_cache = json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not load summaries cache: {e}")
+                self.summaries_cache = {}
+        else:
+            self.summaries_cache = {}
+    
+    def save_summaries_cache(self):
+        """Save pod summaries to cache file."""
+        try:
+            with open(self.summaries_cache_file, 'w') as f:
+                json.dump(self.summaries_cache, f)
+        except Exception as e:
+            print(f"Warning: Could not save summaries cache: {e}")
+    
+    def update_summary_cache(self, pod_id: str, metric_point: Dict):
+        """Update the summary cache for a specific pod with latest metric."""
+        if pod_id not in self.summaries_cache:
+            self.summaries_cache[pod_id] = {
+                'pod_id': pod_id,
+                'name': metric_point.get('name', 'Unknown'),
+                'total_metrics': 0,
+                'latest_metric': None,
+                'avg_cpu': 0,
+                'avg_memory': 0,
+                'avg_gpu': 0,
+                'total_cpu': 0,
+                'total_memory': 0,
+                'total_gpu': 0
+            }
+        
+        cache = self.summaries_cache[pod_id]
+        cache['total_metrics'] += 1
+        cache['latest_metric'] = metric_point
+        cache['name'] = metric_point.get('name', cache['name'])
+        
+        # Update running averages
+        cache['total_cpu'] += metric_point.get('cpu_percent', 0)
+        cache['total_memory'] += metric_point.get('memory_percent', 0)
+        cache['total_gpu'] += metric_point.get('gpu_percent', 0)
+        
+        cache['avg_cpu'] = cache['total_cpu'] / cache['total_metrics']
+        cache['avg_memory'] = cache['total_memory'] / cache['total_metrics']
+        cache['avg_gpu'] = cache['total_gpu'] / cache['total_metrics']
+        
+        # Save cache periodically (every 10 metrics)
+        if cache['total_metrics'] % 10 == 0:
+            self.save_summaries_cache()
     
     def migrate_json_to_jsonl(self):
         """One-time migration from JSON to JSONL format."""
@@ -212,23 +276,29 @@ class DataTracker:
                 print(f"Pod restart detected for {pod_id}: uptime {last_uptime}→{current_uptime}. Clearing old data.")
                 self.data[pod_id] = []  # Clear all historical data
         
-        # Add the metric point to memory
-        self.data[pod_id].append(metric_point)
+        # Add the metric point to memory (only keep last 1 for restart detection)
+        self.data[pod_id] = [metric_point]  # Only keep the latest metric
+        
+        # Update summary cache with this new metric
+        self.update_summary_cache(pod_id, metric_point)
         
         # Append to JSONL file (efficient append-only write)
         self.save_metric(metric_point)
     
     def get_recent_metrics(self, pod_id: str, duration_seconds: int) -> List[Dict]:
-        """Get recent metrics for a pod within the specified duration."""
-        if pod_id not in self.data:
-            return []
+        """Get recent metrics for a pod within the specified duration - reads from file."""
+        # Read from per-pod file instead of memory
+        try:
+            from .pod_metrics_manager import PodMetricsManager
+        except ImportError:
+            from runpod_monitor.pod_metrics_manager import PodMetricsManager
         
+        manager = PodMetricsManager(base_dir='./data/pods')
         cutoff_time = time.time() - duration_seconds
         
-        return [
-            metric for metric in self.data[pod_id]
-            if metric.get("epoch", 0) >= cutoff_time
-        ]
+        # Read metrics from file with time filter
+        metrics = manager.read_metrics(pod_id, file_type="raw", start_epoch=cutoff_time)
+        return metrics if metrics else []
     
     def check_auto_stop_conditions_fast(self, pod_id: str) -> bool:
         """
@@ -407,29 +477,28 @@ class DataTracker:
         self.save_data()
     
     def get_pod_summary(self, pod_id: str) -> Optional[Dict]:
-        """Get summary statistics for a pod."""
-        if pod_id not in self.data or not self.data[pod_id]:
+        """Get summary statistics for a pod from cache."""
+        # Use cache instead of in-memory data
+        if pod_id not in self.summaries_cache:
             return None
+            
+        cache = self.summaries_cache[pod_id]
+        if not cache or not cache.get('latest_metric'):
+            return None
+            
+        recent_metric = cache['latest_metric']
         
-        metrics = self.data[pod_id]
-        recent_metric = metrics[-1]  # Most recent
-        
-        # Calculate averages over last hour
-        recent_hour_metrics = self.get_recent_metrics(pod_id, 3600)
-        
-        if recent_hour_metrics:
-            avg_cpu = sum(m.get("cpu_percent", 0) for m in recent_hour_metrics) / len(recent_hour_metrics)
-            avg_gpu = sum(m.get("gpu_percent", 0) for m in recent_hour_metrics) / len(recent_hour_metrics)
-            avg_memory = sum(m.get("memory_percent", 0) for m in recent_hour_metrics) / len(recent_hour_metrics)
-        else:
-            avg_cpu = avg_gpu = avg_memory = 0
+        # Use cached averages instead of recalculating
+        avg_cpu = cache.get('avg_cpu', 0)
+        avg_memory = cache.get('avg_memory', 0)
+        avg_gpu = cache.get('avg_gpu', 0)
         
         return {
             "pod_id": pod_id,
             "name": recent_metric.get("name", ""),
             "status": recent_metric.get("status", "UNKNOWN"),
-            "total_data_points": len(metrics),
-            "first_seen": metrics[0].get("timestamp") if metrics else None,
+            "total_data_points": cache.get('total_metrics', 0),
+            "first_seen": None,  # Would need to track this in cache
             "last_seen": recent_metric.get("timestamp"),
             "current_metrics": {
                 "cpu_percent": recent_metric.get("cpu_percent", 0),
@@ -445,12 +514,40 @@ class DataTracker:
         }
     
     def get_all_summaries(self) -> List[Dict]:
-        """Get summaries for all tracked pods."""
+        """Get summaries for all tracked pods from cache."""
         summaries = []
-        for pod_id in self.data:
-            summary = self.get_pod_summary(pod_id)
-            if summary:
+        
+        # Use cached summaries instead of loading all data
+        for pod_id, cache in self.summaries_cache.items():
+            if cache and cache.get('latest_metric'):
+                latest = cache['latest_metric']
+                summary = {
+                    'pod_id': pod_id,
+                    'name': cache.get('name', 'Unknown'),
+                    'total_metrics': cache.get('total_metrics', 0),
+                    'total_data_points': cache.get('total_metrics', 0),  # For template compatibility
+                    'latest': {
+                        'timestamp': latest.get('timestamp', ''),
+                        'status': latest.get('status', 'UNKNOWN'),
+                        'uptime_seconds': latest.get('uptime_seconds', 0),
+                        'cost_per_hr': latest.get('cost_per_hr', 0),
+                        'cpu_percent': latest.get('cpu_percent', 0),
+                        'gpu_percent': latest.get('gpu_percent', 0),
+                        'memory_percent': latest.get('memory_percent', 0),
+                    },
+                    'averages': {
+                        'cpu_percent': round(cache.get('avg_cpu', 0), 2),
+                        'gpu_percent': round(cache.get('avg_gpu', 0), 2),
+                        'memory_percent': round(cache.get('avg_memory', 0), 2),
+                    },
+                    'hourly_averages': {  # Template expects this field
+                        'cpu_percent': round(cache.get('avg_cpu', 0), 2),
+                        'gpu_percent': round(cache.get('avg_gpu', 0), 2),
+                        'memory_percent': round(cache.get('avg_memory', 0), 2),
+                    }
+                }
                 summaries.append(summary)
+        
         return summaries
     
     def get_filtered_metrics(self, pod_id: Optional[str] = None, 

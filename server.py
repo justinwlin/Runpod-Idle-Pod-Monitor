@@ -15,8 +15,9 @@ def simple_monitoring_loop():
     """Simple monitoring loop that just works."""
     print("🔄 Starting simple monitoring loop...")
     
-    # Wait a moment for initialization to complete
-    time.sleep(2)
+    # Wait longer before first API call to let server fully start
+    print("⏳ Waiting 10 seconds before first API call to ensure server is ready...")
+    time.sleep(10)
     
     while True:
         try:
@@ -25,6 +26,32 @@ def simple_monitoring_loop():
             
             if pods:
                 print(f"   📦 Found {len(pods)} pods: {[pod['name'] for pod in pods]}")
+                
+                # Clean up auto-stop counters for non-running pods
+                try:
+                    from runpod_monitor.auto_stop_tracker import AutoStopTracker
+                    tracker = AutoStopTracker()
+                    tracker.load_counters()
+                    
+                    # Get only RUNNING pod IDs
+                    running_pod_ids = {pod['id'] for pod in pods if pod.get('desiredStatus') == 'RUNNING'}
+                    
+                    # Find all counters that should be removed (pods that aren't RUNNING)
+                    counters_to_remove = [
+                        pod_id for pod_id in tracker.counters.keys() 
+                        if pod_id not in running_pod_ids
+                    ]
+                    
+                    # Remove stale counters
+                    if counters_to_remove:
+                        for pod_id in counters_to_remove:
+                            pod_name = tracker.counters[pod_id].get('pod_name', pod_id[:8])
+                            del tracker.counters[pod_id]
+                            print(f"   🧹 Removed counter for non-running pod '{pod_name}' ({pod_id})")
+                        tracker.save_counters()
+                        print(f"   ✅ Cleaned up {len(counters_to_remove)} non-running pod counters")
+                except Exception as e:
+                    print(f"   ⚠️ Could not clean stale counters: {e}")
                 
                 # Get the SAME data_tracker that the web server uses
                 from runpod_monitor.main import data_tracker as main_data_tracker, config

@@ -68,6 +68,22 @@ class PodMetricsManager:
         
         return pod_dir / file_names.get(file_type, "metrics_raw.jsonl")
     
+    def get_pod_list(self) -> List[str]:
+        """
+        Get list of pod IDs that have data directories.
+        
+        Returns:
+            List of pod IDs
+        """
+        if not os.path.exists(self.base_dir):
+            return []
+        
+        return [
+            pod_id for pod_id in os.listdir(self.base_dir)
+            if os.path.isdir(os.path.join(self.base_dir, pod_id))
+            and os.path.exists(os.path.join(self.base_dir, pod_id, 'metrics_raw.jsonl'))
+        ]
+    
     def write_metric(self, pod_id: str, metric: Dict[str, Any], file_type: str = "raw") -> bool:
         """
         Write a metric to the pod-specific file.

@@ -5,7 +5,7 @@ Orchestrates all sub-modules and initializes the FastAPI application.
 """
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -40,6 +40,12 @@ app.include_router(config_router)
 app.include_router(monitoring_router)
 app.include_router(metrics_router)
 
+# Health check endpoint for Docker
+@app.get("/status")
+async def health_check():
+    """Simple health check endpoint for Docker health checks."""
+    return JSONResponse({"status": "healthy", "service": "RunPod Monitor"})
+
 
 # Initialize configuration and data tracker when server starts
 def initialize_server():
@@ -71,8 +77,8 @@ def initialize_server():
         print("📊 Data tracker initialized")
 
 
-# Initialize on import
-initialize_server()
+# Don't initialize on import - let startup event handle it
+# initialize_server() - REMOVED to prevent blocking imports
 
 
 @app.on_event("startup")
@@ -81,19 +87,35 @@ async def startup_event():
     Startup event handler for the FastAPI application.
     Starts background monitoring if configured.
     """
-    print("🔄 Server startup: checking monitoring configuration...")
+    import asyncio
+    import threading
     
-    config = get_current_config()
-    if config:
-        auto_stop_enabled = config.get('auto_stop', {}).get('enabled', False)
-        print(f"   Auto-stop enabled: {auto_stop_enabled}")
-        print(f"   Config loaded: {bool(config)}")
-        print(f"   Auto-stop section: {config.get('auto_stop', {})}")
-        
-        # Start monitoring if configured
-        start_monitoring_background()
-    else:
-        print("   No configuration found")
+    print("🔄 Server startup: initializing in background...")
+    
+    def background_init():
+        """Run heavy initialization in background thread."""
+        try:
+            # Initialize server config and data tracker
+            initialize_server()
+            
+            # Get config and start monitoring
+            config = get_current_config()
+            if config:
+                auto_stop_enabled = config.get('auto_stop', {}).get('enabled', False)
+                print(f"   Auto-stop enabled: {auto_stop_enabled}")
+                print(f"   Config loaded: {bool(config)}")
+                
+                # Start monitoring if configured
+                start_monitoring_background()
+            else:
+                print("   No configuration found")
+        except Exception as e:
+            print(f"❌ Background initialization error: {e}")
+    
+    # Start initialization in background thread to not block server startup
+    init_thread = threading.Thread(target=background_init, daemon=True)
+    init_thread.start()
+    print("✅ Server started - initialization running in background")
 
 
 @app.get("/", response_class=HTMLResponse)
