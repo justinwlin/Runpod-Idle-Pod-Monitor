@@ -312,6 +312,47 @@ class PodMetricsManager:
         
         return cleaned_count
     
+    def _apply_rolling_window(self, pod_id: str, file_type: str, interval_minutes: int) -> None:
+        """
+        Apply a rolling window to compacted files to keep only 1 week of data.
+        
+        Args:
+            pod_id: The pod identifier
+            file_type: The file type (30min or 1hour)
+            interval_minutes: Interval in minutes (30 or 60)
+        """
+        # Calculate max data points for 1 week
+        if interval_minutes == 30:
+            max_points = 48 * 7  # 336 points (48 per day * 7 days)
+        elif interval_minutes == 60:
+            max_points = 24 * 7  # 168 points (24 per day * 7 days)
+        else:
+            return  # Unsupported interval
+        
+        # Read all compacted data
+        compacted_file = self.get_metrics_file_path(pod_id, file_type)
+        if not os.path.exists(compacted_file):
+            return
+        
+        # Count lines in file
+        with open(compacted_file, 'r') as f:
+            lines = f.readlines()
+        
+        current_points = len(lines)
+        
+        # If we're over the limit, keep only the most recent points
+        if current_points > max_points:
+            points_to_remove = current_points - max_points
+            
+            # Keep only the most recent max_points
+            lines_to_keep = lines[points_to_remove:]
+            
+            # Rewrite the file with only recent data
+            with open(compacted_file, 'w') as f:
+                f.writelines(lines_to_keep)
+            
+            print(f"🔄 Rolled {file_type} window for {pod_id}: removed {points_to_remove} old entries, kept {len(lines_to_keep)} recent")
+    
     def compact_metrics(self, pod_id: str, interval_minutes: int = 30) -> Tuple[int, int]:
         """
         Compact raw metrics into time-based aggregates.
@@ -422,6 +463,9 @@ class PodMetricsManager:
         
         if windows_created > 0:
             print(f"📊 Compacted {len(metrics_to_process)} metrics into {windows_created} {interval_minutes}-minute windows for {pod_id}")
+            
+            # Apply rolling window to keep only 1 week of data
+            self._apply_rolling_window(pod_id, target_file_type, interval_minutes)
         
         return windows_created, len(metrics_to_process)
     
