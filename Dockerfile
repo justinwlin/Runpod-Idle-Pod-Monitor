@@ -1,10 +1,9 @@
 # RunPod Monitor Dockerfile
 FROM python:3.13-slim
 
-# Install system dependencies (including tmux for copyparty and SSH)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
-    tmux \
     ca-certificates \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
@@ -12,9 +11,8 @@ RUN apt-get update && apt-get install -y \
 # Install UV
 RUN pip install uv
 
-# Install UV for root user globally and pre-install copyparty
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    /root/.local/bin/uv tool install copyparty
+# Install UV for root user globally
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Add UV tools to PATH
 ENV PATH="/root/.local/bin:$PATH"
@@ -49,7 +47,7 @@ ENV DATA_DIR=/workspace/data
 ENV CONFIG_DIR=/workspace/config
 
 # Expose ports
-EXPOSE 8080 8000 22
+EXPOSE 8080 22
 
 # Health check for main app
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

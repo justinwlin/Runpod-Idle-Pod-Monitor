@@ -35,22 +35,6 @@ echo ""
 echo "Default password: ${SSH_PASSWORD}"
 echo "=========================================="
 
-# Start copyparty on port 8000 in background using tmux
-echo "Starting copyparty on port 8000..."
-# Use full path to ensure copyparty is found
-tmux new-session -d -s copyparty "/root/.local/bin/copyparty --port 8000 --allow-csrf /workspace"
-
-# Give copyparty a moment to start
-sleep 3
-
-# Verify copyparty is running
-if tmux list-sessions | grep -q copyparty; then
-    echo "✅ copyparty started successfully in tmux session"
-else
-    echo "❌ copyparty failed to start, trying direct launch..."
-    /root/.local/bin/copyparty --port 8000 --allow-csrf /workspace &
-fi
-
 # Start RunPod Monitor
 echo "Starting RunPod Monitor on port 8080..."
 exec python server.py
