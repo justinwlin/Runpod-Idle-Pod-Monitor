@@ -7,7 +7,7 @@ Monitor and auto-manage your RunPod instances with a simple web interface.
 2.0: Data Migration + Hooks + Data compaction for graphs
 2.1: Attempt to fix hanging code on startup server
 2.2: Beta Version of Better Memory Management
-3.0: File-based operations in order to deal with large amount of data points
+2.3: Data Clean Up for non-existing pods
 
 ----
 Runpod Image:

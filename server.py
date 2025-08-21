@@ -11,6 +11,57 @@ from datetime import datetime
 from runpod_monitor.main import load_config, fetch_pods, data_tracker
 from runpod_monitor.web_server import app
 
+def cleanup_terminated_pod_data(pods):
+    """
+    Clean up data directories for pods that are not in RUNNING or EXITED states.
+    
+    Args:
+        pods: List of current pods from the API
+        
+    Returns:
+        Number of pods cleaned up
+    """
+    try:
+        from runpod_monitor.pod_metrics_manager import PodMetricsManager
+        import shutil
+        
+        pod_metrics_manager = PodMetricsManager(base_dir='./data/pods')
+        
+        # Get list of active pod IDs (only RUNNING and EXITED pods)
+        active_pod_ids = [
+            pod['id'] for pod in pods 
+            if pod.get('desiredStatus') in ['RUNNING', 'EXITED']
+        ]
+        
+        # Get all pod directories that have data
+        all_stored_pods = pod_metrics_manager.list_pods()
+        
+        # Find pods to clean up (those not in RUNNING or EXITED state)
+        pods_to_cleanup = set(all_stored_pods) - set(active_pod_ids)
+        
+        if pods_to_cleanup:
+            print(f"   🧹 Cleaning up data for {len(pods_to_cleanup)} terminated/stopped pods...")
+            for pod_id in pods_to_cleanup:
+                pod_info = pod_metrics_manager.get_pod_info(pod_id)
+                pod_name = pod_info.get("pod_name", pod_id[:8])
+                last_status = pod_info.get("last_status", "UNKNOWN")
+                
+                # Delete the pod directory (not archiving to prevent data buildup)
+                pod_dir = pod_metrics_manager.get_pod_directory(pod_id)
+                if pod_dir.exists():
+                    shutil.rmtree(pod_dir)
+                    print(f"      🗑️ Deleted data for pod '{pod_name}' ({pod_id[:8]}...) - last status: {last_status}")
+            
+            print(f"   ✅ Cleanup completed for terminated/stopped pods")
+            return len(pods_to_cleanup)
+        else:
+            print(f"   ✅ No terminated/stopped pods to clean up")
+            return 0
+            
+    except Exception as e:
+        print(f"   ⚠️ Error during pod data cleanup: {e}")
+        return 0
+
 def simple_monitoring_loop():
     """Simple monitoring loop that just works."""
     print("🔄 Starting simple monitoring loop...")
@@ -19,7 +70,11 @@ def simple_monitoring_loop():
     print("⏳ Waiting 10 seconds before first API call to ensure server is ready...")
     time.sleep(10)
     
+    # Track when we last did pod cleanup
+    last_pod_cleanup_time = 0
+    
     while True:
+        current_time = time.time()
         try:
             print(f"📊 [{time.strftime('%H:%M:%S')}] Fetching pods from RunPod API...")
             pods = fetch_pods()
@@ -186,6 +241,17 @@ def simple_monitoring_loop():
                     # Verify data was actually stored
                     total_summaries = len(main_data_tracker.get_all_summaries())
                     print(f"   📈 Total tracked pods in data_tracker: {total_summaries}")
+                    
+                    # Clean up pod data for pods that are not RUNNING or EXITED
+                    # Run on startup (first iteration) and then every hour
+                    should_cleanup_pods = (
+                        last_pod_cleanup_time == 0 or  # First run (startup)
+                        (current_time - last_pod_cleanup_time) >= 3600  # Every hour
+                    )
+                    
+                    if should_cleanup_pods:
+                        cleanup_terminated_pod_data(pods)
+                        last_pod_cleanup_time = current_time
                 else:
                     print("   ❌ Data tracker not initialized")
             else:
