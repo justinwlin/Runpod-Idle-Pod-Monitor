@@ -524,21 +524,21 @@ async def get_auto_stop_predictions(request: Request):
         
         html += f'''
             <tr>
-                <td><small>{pred['pod_name']}</small></td>
-                <td><small><code>{pod_id_short}</code></small></td>
-                <td>
+                <td class="align-middle"><small>{pred['pod_name']}</small></td>
+                <td class="align-middle"><small><code>{pod_id_short}</code></small></td>
+                <td class="align-middle">
                     <div class="progress" style="height: 15px;">
                         <div class="progress-bar bg-{status_class}" style="width: {pred['progress_percent']}%">
                             {pred['progress_percent']:.0f}%
                         </div>
                     </div>
                 </td>
-                <td><small>{pred['meeting_criteria']}/{pred['total_needed']}</small></td>
-                <td><small>{pred['avg_cpu']}%</small></td>
-                <td><small>{pred['avg_memory']}%</small></td>
-                <td><small>{pred['avg_gpu']}%</small></td>
-                <td><span class="badge bg-{status_class}">{status_text}</span></td>
-                <td>
+                <td class="align-middle"><small>{pred['meeting_criteria']}/{pred['total_needed']}</small></td>
+                <td class="align-middle"><small>{pred['avg_cpu']}%</small></td>
+                <td class="align-middle"><small>{pred['avg_memory']}%</small></td>
+                <td class="align-middle"><small>{pred['avg_gpu']}%</small></td>
+                <td class="align-middle"><span class="badge bg-{status_class}">{status_text}</span></td>
+                <td class="align-middle">
                     <button class="btn btn-outline-danger btn-sm" 
                             hx-post="/pods/{pred['pod_id']}/stop"
                             hx-confirm="Stop pod '{pred['pod_name']}'?"

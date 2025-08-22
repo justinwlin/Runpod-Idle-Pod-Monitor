@@ -26,32 +26,9 @@
     </div>
 </div>
 
-<!-- Auto-Stop Predictions (Most Important - Top Priority) -->
-<div class="row mt-3">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">⚠️ Auto-Stop Predictions</h5>
-                <small class="text-muted">
-                    {% if config.auto_stop.monitor_only %}
-                        🔍 Monitor-Only Mode: Pods that would be stopped (no actual stopping)
-                    {% else %}
-                        Pods approaching auto-stop thresholds
-                    {% endif %}
-                </small>
-            </div>
-            <div class="card-body">
-                <div id="auto-stop-predictions" hx-get="/api/auto-stop-predictions" hx-trigger="load, every 20s" hx-swap="innerHTML">
-                    <p>Loading predictions...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Overall Statistics -->
+<!-- Active Pod Statistics -->
 {% if summaries %}
-<div class="row mt-4">
+<div class="row mt-3">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -136,6 +113,29 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Auto-Stop Predictions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">⚠️ Auto-Stop Predictions</h5>
+                <small class="text-muted">
+                    {% if config.auto_stop.monitor_only %}
+                        🔍 Monitor-Only Mode: Pods that would be stopped (no actual stopping)
+                    {% else %}
+                        Pods approaching auto-stop thresholds
+                    {% endif %}
+                </small>
+            </div>
+            <div class="card-body">
+                <div id="auto-stop-predictions" hx-get="/api/auto-stop-predictions" hx-trigger="load, every 20s" hx-swap="innerHTML">
+                    <p>Loading predictions...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Raw Data Section -->
 <div class="row mt-5">
