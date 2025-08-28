@@ -114,6 +114,21 @@ setup_dependencies() {
 # Run dependency check
 setup_dependencies
 
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Download TMUX help file for reference (save next to script)
+HELP_FILE="${SCRIPT_DIR}/TMUX_HELP.md"
+printf "${YELLOW}📖 Downloading tmux help guide...${NC}\n"
+if command -v curl &> /dev/null; then
+    curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -o "$HELP_FILE" 2>/dev/null || true
+elif command -v wget &> /dev/null; then
+    wget -q https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -O "$HELP_FILE" 2>/dev/null || true
+fi
+if [ -f "$HELP_FILE" ]; then
+    printf "${GREEN}✓ Help guide saved to $HELP_FILE${NC}\n"
+fi
+
 # Check required environment variables
 if [ -z "$RUNPOD_API_KEY" ]; then
     printf "${RED}❌ Error: RUNPOD_API_KEY environment variable not set${NC}\n"
@@ -127,10 +142,7 @@ if [ -z "$RUNPOD_POD_ID" ]; then
     exit 1
 fi
 
-# Get the directory where the script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
-# Configuration files (stored next to the script)
+# Configuration files (stored next to the script) - SCRIPT_DIR already set above
 CONFIG_FILE="${SCRIPT_DIR}/monitor_config.json"
 COUNTER_FILE="${SCRIPT_DIR}/monitor_counter.json"
 
@@ -335,6 +347,23 @@ stop_pod() {
     printf "${GREEN}✓ Stop command sent${NC}\n"
 }
 
+# Show final instructions before monitoring starts
+printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf "${GREEN}✅ SETUP COMPLETE! Monitor is now running.${NC}\n"
+printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+echo ""
+printf "${YELLOW}📌 You can safely close this tab/window!${NC}\n"
+echo "The monitor will continue running in the background."
+echo ""
+printf "${BLUE}To check on your monitor later:${NC}\n"
+echo "  • Reattach: tmux attach -t monitor"
+echo "  • Check status: cat ${SCRIPT_DIR}/monitor_counter.json"
+echo "  • View help: cat ${SCRIPT_DIR}/TMUX_HELP.md"
+echo ""
+printf "${YELLOW}If running in tmux, detach now with: Ctrl+B then D${NC}\n"
+echo ""
+sleep 3
+
 # Main monitoring loop
 printf "${GREEN}🔄 Monitoring started (checking every minute)${NC}\n"
 echo "Press Ctrl+C to stop monitoring"
@@ -385,9 +414,11 @@ EOF
     # Display status
     TIME=$(date '+%H:%M:%S')
     if [ "$BELOW_THRESHOLD" = "true" ]; then
-        printf "[$TIME] ${YELLOW}📊 Below threshold${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}% | Counter: ${CONSECUTIVE}/${DURATION_MINUTES}\n"
+        printf "[%s] %s📊 Below threshold%s - CPU: %s%% | Mem: %s%% | GPU: %s%% | Counter: %s/%s\n" \
+            "$TIME" "$YELLOW" "$NC" "$CPU" "$MEMORY" "$GPU" "$CONSECUTIVE" "$DURATION_MINUTES"
     else
-        printf "[$TIME] ${GREEN}📊 Active${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}%\n"
+        printf "[%s] %s📊 Active%s - CPU: %s%% | Mem: %s%% | GPU: %s%%\n" \
+            "$TIME" "$GREEN" "$NC" "$CPU" "$MEMORY" "$GPU"
     fi
     
     # Check if should stop

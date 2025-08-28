@@ -12,10 +12,53 @@ Monitor and auto-manage your RunPod instances with a simple web interface.
 2.3: Data Clean Up for non-existing pods
 
 ----
+
+## 🆕 Self-Contained Pod Monitor
+
+For a portable version where the pod monitors itself (rather than organization-level monitoring), check out:
+
+**📁 Directory:** [`./self-contained/`](./self-contained/)
+
+### Quick Start - One Line Installation
+
+Inside your RunPod pod terminal, run:
+
+```bash
+apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/quick_install.sh -o /tmp/quick_install.sh && chmod +x /tmp/quick_install.sh && /tmp/quick_install.sh
+```
+
+This command will:
+- Install tmux for persistent session management
+- Download and run the monitoring script
+- Guide you through configuration (CPU/GPU/Memory thresholds)
+- Start monitoring in a tmux session that survives SSH disconnections
+- Automatically stop your pod when idle (optional)
+
+### Features
+- ✅ No external dependencies - runs entirely within your pod
+- ✅ Survives SSH disconnections using tmux
+- ✅ Monitor-only mode for testing thresholds
+- ✅ Auto-stop mode to save money
+- ✅ Simple threshold configuration
+- ✅ Real-time resource monitoring
+
+### After Installation
+- **Detach from monitor:** `Ctrl+B` then `D`
+- **Reattach to monitor:** `tmux attach -t monitor`
+- **Check status:** `cat /tmp/monitor_counter.json`
+- **View help:** `cat /tmp/TMUX_HELP.md`
+
+See [self-contained README](./self-contained/README.md) for detailed instructions.
+
+----
+
+## 🖥️ Organization-Level Monitor (Web Dashboard)
+
 Runpod Image:
 https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
 
 **IF YOU DEPLOY THIS ON RUNPOD** MAKE SURE TO EXCLUDE THE POD YOU ARE RUNNING THIS ON FROM THE MONITORING. There is an "Monitoring" Button on the home page for the pod, which when you click it will switch it to the exclude list.
+
 ----
 
 ## ⚡ Quick Start
