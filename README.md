@@ -59,6 +59,13 @@ https://console.runpod.io/deploy?template=xe00ihiurd&ref=p1oqnqy1
 
 **IF YOU DEPLOY THIS ON RUNPOD** MAKE SURE TO EXCLUDE THE POD YOU ARE RUNNING THIS ON FROM THE MONITORING. There is an "Monitoring" Button on the home page for the pod, which when you click it will switch it to the exclude list.
 
+Recommended: Run this on the cheapest CPU Pod
+
+Docker Image Recommended version currently, if you self deploy / run it not on Runpod, make sure to set the .env file. In Runpod Pods, the ENV already has an API key injected so there is no need to manually set it.
+```
+docker.io/justinrunpod/runpodidlemonitor:2.3
+```
+
 ----
 
 ## ⚡ Quick Start

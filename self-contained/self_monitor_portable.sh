@@ -115,12 +115,21 @@ setup_dependencies() {
 setup_dependencies
 
 # Get the directory where the script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# When run from /tmp, we want to use the current working directory instead
+if [[ "${BASH_SOURCE[0]}" == "/tmp/"* ]]; then
+    # Script is in /tmp, use current working directory
+    SCRIPT_DIR="$(pwd)"
+    printf "${BLUE}📍 Script running from /tmp, using current directory: $SCRIPT_DIR${NC}\n"
+else
+    # Script is elsewhere, use its actual directory
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    printf "${BLUE}📍 Script directory: $SCRIPT_DIR${NC}\n"
+fi
 
-# Download TMUX help file for reference (save next to script)
+# Download TMUX help file for reference (save in working directory)
 HELP_FILE="${SCRIPT_DIR}/TMUX_HELP.md"
 printf "${YELLOW}📖 Downloading tmux help guide...${NC}\n"
-echo "  Saving to: $HELP_FILE"
+echo "  Target location: $HELP_FILE"
 
 # Try to download the help file with better error handling
 DOWNLOAD_SUCCESS=0
@@ -190,10 +199,17 @@ EOF
 fi
 
 if [ -f "$HELP_FILE" ]; then
-    printf "${GREEN}✓ Help guide saved to $HELP_FILE${NC}\n"
+    printf "${GREEN}✓ Help guide saved successfully!${NC}\n"
+    printf "${GREEN}  📁 Location: $HELP_FILE${NC}\n"
+    printf "${GREEN}  📖 View it: cat $HELP_FILE${NC}\n"
+    # Show file size to confirm it downloaded
+    FILE_SIZE=$(wc -c < "$HELP_FILE")
+    printf "${GREEN}  📊 Size: $FILE_SIZE bytes${NC}\n"
 else
-    printf "${YELLOW}⚠️ Could not save help guide${NC}\n"
+    printf "${RED}❌ ERROR: Could not save help guide${NC}\n"
+    printf "${RED}  Expected location: $HELP_FILE${NC}\n"
 fi
+echo ""
 
 # Check required environment variables
 if [ -z "$RUNPOD_API_KEY" ]; then
@@ -208,7 +224,7 @@ if [ -z "$RUNPOD_POD_ID" ]; then
     exit 1
 fi
 
-# Configuration files (stored next to the script) - SCRIPT_DIR already set above
+# Configuration files (stored in working directory) - SCRIPT_DIR already set above
 CONFIG_FILE="${SCRIPT_DIR}/monitor_config.json"
 COUNTER_FILE="${SCRIPT_DIR}/monitor_counter.json"
 
@@ -424,7 +440,11 @@ echo ""
 printf "${BLUE}To check on your monitor later:${NC}\n"
 echo "  • Reattach: tmux attach -t monitor"
 echo "  • Check status: cat ${SCRIPT_DIR}/monitor_counter.json"
-echo "  • View help: cat ${SCRIPT_DIR}/TMUX_HELP.md"
+if [ -f "${SCRIPT_DIR}/TMUX_HELP.md" ]; then
+    echo "  • View help: cat ${SCRIPT_DIR}/TMUX_HELP.md ✅ (File exists!)"
+else
+    echo "  • View help: cat ${SCRIPT_DIR}/TMUX_HELP.md ⚠️ (File not found)"
+fi
 echo ""
 printf "${YELLOW}If running in tmux, detach now with: Ctrl+B then D${NC}\n"
 echo ""
