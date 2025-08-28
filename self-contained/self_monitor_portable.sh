@@ -120,13 +120,79 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Download TMUX help file for reference (save next to script)
 HELP_FILE="${SCRIPT_DIR}/TMUX_HELP.md"
 printf "${YELLOW}📖 Downloading tmux help guide...${NC}\n"
+echo "  Saving to: $HELP_FILE"
+
+# Try to download the help file with better error handling
+DOWNLOAD_SUCCESS=0
 if command -v curl &> /dev/null; then
-    curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -o "$HELP_FILE" 2>/dev/null || true
+    if curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -o "$HELP_FILE"; then
+        DOWNLOAD_SUCCESS=1
+    else
+        printf "${YELLOW}  Warning: Could not download from GitHub${NC}\n"
+    fi
 elif command -v wget &> /dev/null; then
-    wget -q https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -O "$HELP_FILE" 2>/dev/null || true
+    if wget -q https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/TMUX_HELP.md -O "$HELP_FILE"; then
+        DOWNLOAD_SUCCESS=1
+    else
+        printf "${YELLOW}  Warning: Could not download from GitHub${NC}\n"
+    fi
 fi
+
+# If download failed, create a basic help file
+if [ "$DOWNLOAD_SUCCESS" -eq 0 ] || [ ! -f "$HELP_FILE" ]; then
+    printf "${YELLOW}  Creating local help file...${NC}\n"
+    cat > "$HELP_FILE" << 'EOF'
+=========================================
+📌 TMUX SESSION MANAGEMENT GUIDE
+=========================================
+
+Your monitor is running in tmux session: 'monitor'
+
+🔑 ESSENTIAL COMMANDS:
+----------------------
+• DETACH (leave running):     Ctrl+B then D
+• REATTACH to session:        tmux attach -t monitor
+• LIST all sessions:          tmux ls
+• KILL the monitor:           tmux kill-session -t monitor
+
+📜 WHILE IN THE SESSION:
+------------------------
+• SCROLL UP/DOWN:             Ctrl+B then [
+  - Use arrow keys or Page Up/Down to scroll
+  - Press Q to exit scroll mode
+• STOP the monitor:           Ctrl+C
+• DETACH and keep running:    Ctrl+B then D
+
+🔄 IF YOU ACCIDENTALLY EXIT:
+-----------------------------
+1. Check if still running:    tmux ls
+2. Reattach to monitor:       tmux attach -t monitor
+3. If session is dead, run the installer again
+
+💡 COMMON SCENARIOS:
+--------------------
+• Lost SSH connection?        Monitor keeps running!
+                             Just reattach: tmux attach -t monitor
+
+• Want to check status?       tmux attach -t monitor
+                             Then Ctrl+B, D to detach
+
+• Need to restart fresh?      tmux kill-session -t monitor
+                             Then run installer again
+
+📊 VIEW MONITOR STATUS FILES:
+------------------------------
+• Current metrics:            cat ${SCRIPT_DIR}/monitor_counter.json
+• Configuration:              cat ${SCRIPT_DIR}/monitor_config.json
+
+=========================================
+EOF
+fi
+
 if [ -f "$HELP_FILE" ]; then
     printf "${GREEN}✓ Help guide saved to $HELP_FILE${NC}\n"
+else
+    printf "${YELLOW}⚠️ Could not save help guide${NC}\n"
 fi
 
 # Check required environment variables
