@@ -13,9 +13,6 @@ Your monitor is running in tmux session: 'monitor'
 
 📜 WHILE IN THE SESSION:
 ------------------------
-• SCROLL UP/DOWN:             Ctrl+B then [
-  - Use arrow keys or Page Up/Down to scroll
-  - Press Q to exit scroll mode
 • STOP the monitor:           Ctrl+C
 • DETACH and keep running:    Ctrl+B then D
 
@@ -38,10 +35,3 @@ Your monitor is running in tmux session: 'monitor'
 
 • Multiple monitors?          Use different session names:
                              tmux new -s monitor2 "/tmp/self_monitor.sh"
-
-📊 VIEW MONITOR STATUS FILES:
-------------------------------
-• Current metrics:            cat /tmp/monitor_counter.json
-• Configuration:              cat /tmp/monitor_config.json
-
-=========================================
