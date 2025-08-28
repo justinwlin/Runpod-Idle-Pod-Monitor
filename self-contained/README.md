@@ -7,7 +7,7 @@ A standalone script to monitor and auto-stop idle RunPod pods to save costs.
 Run this single command to set up everything:
 
 ```bash
-apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/main/self_monitor_portable.sh -o /tmp/monitor.sh && chmod +x /tmp/monitor.sh && tmux new -d -s monitor "/tmp/monitor.sh" && tmux attach -t monitor
+apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/self_monitor_portable.sh -o /tmp/monitor.sh && chmod +x /tmp/monitor.sh && tmux new -d -s monitor "/tmp/monitor.sh" && tmux attach -t monitor
 ```
 
 ## 📋 What This Does
