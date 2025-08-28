@@ -5,39 +5,61 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Colors for output (with terminal detection)
+if [ -t 1 ] && [ -n "${TERM}" ] && [ "${TERM}" != "dumb" ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+else
+    # No color support
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    NC=''
+fi
 
-echo -e "${BLUE}🚀 RunPod Self-Monitor Setup (Portable Version)${NC}"
+printf "${BLUE}🚀 RunPod Self-Monitor Setup (Portable Version)${NC}\n"
 echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${YELLOW}📖 HOW THIS SCRIPT WORKS:${NC}"
+
+# Check if running in tmux and show commands
+if [ -n "$TMUX" ]; then
+    printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    printf "${YELLOW}📌 TMUX SESSION DETECTED - Quick Commands:${NC}\n"
+    echo ""
+    printf "  ${BLUE}•${NC} DETACH (leave running): ${GREEN}Ctrl+B then D${NC}\n"
+    printf "  ${BLUE}•${NC} Scroll up/down: ${GREEN}Ctrl+B then [${NC} (use arrows, ${GREEN}Q${NC} to exit)\n"
+    printf "  ${BLUE}•${NC} Stop monitor: ${GREEN}Ctrl+C${NC}\n"
+    printf "  ${BLUE}•${NC} Reattach later: ${GREEN}tmux attach -t monitor${NC}\n"
+    echo ""
+fi
+
+printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf "${YELLOW}📖 HOW THIS SCRIPT WORKS:${NC}\n"
 echo ""
 echo "This script monitors your RunPod pod's resource usage and can automatically"
 echo "stop it when idle to save money. Here's what it does:"
 echo ""
-echo "1. ${BLUE}Monitors 3 metrics every minute:${NC}"
+printf "1. ${BLUE}Monitors 3 metrics every minute:${NC}\n"
 echo "   • CPU Usage (%)"
 echo "   • Memory Usage (%)"
 echo "   • GPU Usage (%)"
 echo ""
-echo "2. ${BLUE}You set thresholds for each metric:${NC}"
+printf "2. ${BLUE}You set thresholds for each metric:${NC}\n"
 echo "   For example: CPU < 20%, Memory < 30%, GPU < 15%"
 echo "   The pod is considered 'idle' when ALL three metrics are below their thresholds"
 echo ""
-echo "3. ${BLUE}You set a duration (in minutes):${NC}"
+printf "3. ${BLUE}You set a duration (in minutes):${NC}\n"
 echo "   How long the pod must remain idle before taking action"
 echo "   For example: 30 minutes of continuous idle time"
 echo ""
-echo "4. ${BLUE}Two modes available:${NC}"
-echo "   ${YELLOW}Monitor Mode:${NC} Just tracks and alerts (safe for testing)"
-echo "   ${RED}Auto-Stop Mode:${NC} Actually stops the pod when idle (saves money!)"
+printf "4. ${BLUE}Two modes available:${NC}\n"
+printf "   ${YELLOW}Monitor Mode:${NC} Just tracks and alerts (safe for testing)\n"
+printf "   ${RED}Auto-Stop Mode:${NC} Actually stops the pod when idle (saves money!)\n"
 echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 echo ""
 echo "Press Enter to continue with setup..."
 read -r
@@ -45,11 +67,11 @@ echo ""
 
 # Function to check and install dependencies
 setup_dependencies() {
-    echo -e "${YELLOW}📦 Checking dependencies...${NC}"
+    printf "${YELLOW}📦 Checking dependencies...${NC}\n"
     
     # Check for Python3
     if ! command -v python3 &> /dev/null; then
-        echo -e "${YELLOW}Python3 not found. Attempting to install...${NC}"
+        printf "${YELLOW}Python3 not found. Attempting to install...${NC}\n"
         
         # Try different package managers
         if command -v apt-get &> /dev/null; then
@@ -59,14 +81,14 @@ setup_dependencies() {
         elif command -v apk &> /dev/null; then
             apk add --no-cache python3
         else
-            echo -e "${RED}❌ Could not install Python3. Please install manually.${NC}"
+            printf "${RED}❌ Could not install Python3. Please install manually.${NC}\n"
             exit 1
         fi
     fi
     
     # Check for curl
     if ! command -v curl &> /dev/null; then
-        echo -e "${YELLOW}curl not found. Attempting to install...${NC}"
+        printf "${YELLOW}curl not found. Attempting to install...${NC}\n"
         
         if command -v apt-get &> /dev/null; then
             apt-get update && apt-get install -y curl
@@ -77,16 +99,16 @@ setup_dependencies() {
         else
             # Try wget as fallback
             if command -v wget &> /dev/null; then
-                echo -e "${YELLOW}Using wget instead of curl${NC}"
+                printf "${YELLOW}Using wget instead of curl${NC}\n"
                 USE_WGET=1
             else
-                echo -e "${RED}❌ Could not install curl or wget. Please install manually.${NC}"
+                printf "${RED}❌ Could not install curl or wget. Please install manually.${NC}\n"
                 exit 1
             fi
         fi
     fi
     
-    echo -e "${GREEN}✓ All dependencies satisfied${NC}"
+    printf "${GREEN}✓ All dependencies satisfied${NC}\n"
 }
 
 # Run dependency check
@@ -94,13 +116,13 @@ setup_dependencies
 
 # Check required environment variables
 if [ -z "$RUNPOD_API_KEY" ]; then
-    echo -e "${RED}❌ Error: RUNPOD_API_KEY environment variable not set${NC}"
+    printf "${RED}❌ Error: RUNPOD_API_KEY environment variable not set${NC}\n"
     echo "Please set: export RUNPOD_API_KEY=your_api_key_here"
     exit 1
 fi
 
 if [ -z "$RUNPOD_POD_ID" ]; then
-    echo -e "${RED}❌ Error: RUNPOD_POD_ID environment variable not set${NC}"
+    printf "${RED}❌ Error: RUNPOD_POD_ID environment variable not set${NC}\n"
     echo "This script must be run inside a RunPod pod"
     exit 1
 fi
@@ -121,7 +143,7 @@ json_get() {
 
 # Get configuration from user or use existing
 if [ -f "$CONFIG_FILE" ]; then
-    echo -e "${GREEN}✓ Found existing configuration${NC}"
+    printf "${GREEN}✓ Found existing configuration${NC}\n"
     cat "$CONFIG_FILE"
     echo ""
     read -p "Use existing configuration? (y/n): " use_existing
@@ -131,12 +153,12 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "${YELLOW}📝 Configure monitoring thresholds:${NC}"
+    printf "${YELLOW}📝 Configure monitoring thresholds:${NC}\n"
     echo "Set the maximum usage levels that indicate your pod is idle."
     echo ""
     
     # Get CPU threshold
-    echo -e "${BLUE}CPU Threshold:${NC}"
+    printf "${BLUE}CPU Threshold:${NC}\n"
     echo "  Pod is idle when CPU usage is BELOW this percentage"
     echo "  Example: 20 means idle when CPU < 20%"
     read -p "  Enter CPU threshold (%, default 20): " cpu_threshold
@@ -144,7 +166,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo ""
     
     # Get Memory threshold
-    echo -e "${BLUE}Memory Threshold:${NC}"
+    printf "${BLUE}Memory Threshold:${NC}\n"
     echo "  Pod is idle when Memory usage is BELOW this percentage"
     echo "  Example: 30 means idle when Memory < 30%"
     read -p "  Enter Memory threshold (%, default 30): " memory_threshold
@@ -152,7 +174,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo ""
     
     # Get GPU threshold
-    echo -e "${BLUE}GPU Threshold:${NC}"
+    printf "${BLUE}GPU Threshold:${NC}\n"
     echo "  Pod is idle when GPU usage is BELOW this percentage"
     echo "  Example: 15 means idle when GPU < 15%"
     read -p "  Enter GPU threshold (%, default 15): " gpu_threshold
@@ -160,7 +182,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo ""
     
     # Get duration (in minutes)
-    echo -e "${BLUE}Idle Duration:${NC}"
+    printf "${BLUE}Idle Duration:${NC}\n"
     echo "  How many minutes must the pod remain idle before action is taken"
     echo "  Example: 30 means wait 30 minutes of continuous idle time"
     read -p "  Enter duration (minutes, default 30): " duration_minutes
@@ -168,7 +190,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo ""
     
     # Monitor-only mode
-    echo -e "${BLUE}Operating Mode:${NC}"
+    printf "${BLUE}Operating Mode:${NC}\n"
     echo "  Monitor Mode (y): Only track and alert, won't stop the pod (safe for testing)"
     echo "  Auto-Stop Mode (n): Actually stop the pod when idle (saves money)"
     read -p "  Use Monitor-only mode? (y/n, default n): " monitor_only
@@ -186,7 +208,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     "pod_id": "$RUNPOD_POD_ID"
 }
 EOF
-    echo -e "${GREEN}✓ Configuration saved${NC}"
+    printf "${GREEN}✓ Configuration saved${NC}\n"
 fi
 
 # Load configuration
@@ -197,7 +219,7 @@ DURATION_MINUTES=$(json_get "$CONFIG_FILE" "duration_minutes")
 MONITOR_ONLY=$(json_get "$CONFIG_FILE" "monitor_only")
 
 echo ""
-echo -e "${BLUE}📊 Starting monitoring with settings:${NC}"
+printf "${BLUE}📊 Starting monitoring with settings:${NC}\n"
 echo "  CPU Threshold: ${CPU_THRESHOLD}%"
 echo "  Memory Threshold: ${MEMORY_THRESHOLD}%"
 echo "  GPU Threshold: ${GPU_THRESHOLD}%"
@@ -208,13 +230,13 @@ echo ""
 
 # Explain the mode
 if [ "$MONITOR_ONLY" = "true" ]; then
-    echo -e "${YELLOW}🔍 Running in MONITOR MODE:${NC}"
+    printf "${YELLOW}🔍 Running in MONITOR MODE:${NC}\n"
     echo "  • Will track when pod usage falls below thresholds"
     echo "  • Will show alerts when idle threshold is met"
     echo "  • Will NOT actually stop the pod (safe for testing)"
     echo "  • Useful for testing your threshold settings"
 else
-    echo -e "${RED}⚠️ Running in AUTO-STOP MODE:${NC}"
+    printf "${RED}⚠️ Running in AUTO-STOP MODE:${NC}\n"
     echo "  • Will track when pod usage falls below ALL thresholds:"
     echo "    - CPU < ${CPU_THRESHOLD}% AND"
     echo "    - Memory < ${MEMORY_THRESHOLD}% AND"
@@ -304,17 +326,17 @@ compare_below() {
 
 # Function to stop pod
 stop_pod() {
-    echo -e "${YELLOW}🛑 Stopping pod...${NC}"
+    printf "${YELLOW}🛑 Stopping pod...${NC}\n"
     
     local mutation="mutation { podStop(input: {podId: \\\"$RUNPOD_POD_ID\\\"}) { id desiredStatus } }"
     
     api_call "$mutation"
     
-    echo -e "${GREEN}✓ Stop command sent${NC}"
+    printf "${GREEN}✓ Stop command sent${NC}\n"
 }
 
 # Main monitoring loop
-echo -e "${GREEN}🔄 Monitoring started (checking every minute)${NC}"
+printf "${GREEN}🔄 Monitoring started (checking every minute)${NC}\n"
 echo "Press Ctrl+C to stop monitoring"
 echo ""
 
@@ -326,7 +348,7 @@ while true; do
     METRICS=$(get_pod_metrics)
     
     if [ -z "$METRICS" ]; then
-        echo -e "${RED}⚠️ Could not fetch metrics${NC}"
+        printf "${RED}⚠️ Could not fetch metrics${NC}\n"
         sleep 60
         continue
     fi
@@ -363,19 +385,19 @@ EOF
     # Display status
     TIME=$(date '+%H:%M:%S')
     if [ "$BELOW_THRESHOLD" = "true" ]; then
-        echo -e "[$TIME] ${YELLOW}📊 Below threshold${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}% | Counter: ${CONSECUTIVE}/${DURATION_MINUTES}"
+        printf "[$TIME] ${YELLOW}📊 Below threshold${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}% | Counter: ${CONSECUTIVE}/${DURATION_MINUTES}\n"
     else
-        echo -e "[$TIME] ${GREEN}📊 Active${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}%"
+        printf "[$TIME] ${GREEN}📊 Active${NC} - CPU: ${CPU}% | Mem: ${MEMORY}% | GPU: ${GPU}%\n"
     fi
     
     # Check if should stop
     if [ $CONSECUTIVE -ge $DURATION_MINUTES ]; then
         if [ "$MONITOR_ONLY" = "true" ]; then
-            echo -e "${YELLOW}🔍 MONITOR MODE: Pod would be stopped (threshold met for ${DURATION_MINUTES} minutes)${NC}"
+            printf "${YELLOW}🔍 MONITOR MODE: Pod would be stopped (threshold met for ${DURATION_MINUTES} minutes)${NC}\n"
         else
-            echo -e "${RED}⚠️ Idle threshold met for ${DURATION_MINUTES} minutes!${NC}"
+            printf "${RED}⚠️ Idle threshold met for ${DURATION_MINUTES} minutes!${NC}\n"
             stop_pod
-            echo -e "${GREEN}✅ Pod stop initiated. Exiting monitor.${NC}"
+            printf "${GREEN}✅ Pod stop initiated. Exiting monitor.${NC}\n"
             exit 0
         fi
     fi

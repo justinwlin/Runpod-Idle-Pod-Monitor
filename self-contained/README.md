@@ -7,7 +7,14 @@ A standalone script to monitor and auto-stop idle RunPod pods to save costs.
 Run this single command to set up everything:
 
 ```bash
-apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/self_monitor_portable.sh -o /tmp/monitor.sh && chmod +x /tmp/monitor.sh && tmux new -d -s monitor "/tmp/monitor.sh" && tmux attach -t monitor
+apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/quick_install.sh -o /tmp/quick_install.sh && chmod +x /tmp/quick_install.sh && /tmp/quick_install.sh
+```
+
+### Alternative: Direct Monitor Start (No Session Management)
+If you want to bypass the session manager and start fresh:
+
+```bash
+apt-get update && apt-get install -y tmux curl && tmux kill-session -t monitor 2>/dev/null; curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/self_monitor_portable.sh -o /tmp/monitor.sh && chmod +x /tmp/monitor.sh && tmux new -d -s monitor "/tmp/monitor.sh" && tmux attach -t monitor
 ```
 
 ## 📋 What This Does
@@ -17,7 +24,23 @@ apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubus
 3. **Starts monitoring in tmux** - Runs in background, survives disconnections
 4. **Attaches to the session** - Shows you the configuration screen
 
-## 🎮 Tmux Commands
+## 🎮 Tmux Session Management
+
+### 🚨 Common Issues & Solutions
+
+#### "Session Already Exists" Error
+If you see this error when running the one-liner:
+```bash
+# Option 1: Use the quick installer (handles existing sessions)
+curl -sSL https://raw.githubusercontent.com/justinwlin/Runpod-Idle-Pod-Monitor/refs/heads/main/self-contained/quick_install.sh -o /tmp/quick_install.sh && chmod +x /tmp/quick_install.sh && /tmp/quick_install.sh
+
+# Option 2: Kill and restart
+tmux kill-session -t monitor
+# Then run the one-liner again
+
+# Option 3: Just attach to existing
+tmux attach -t monitor
+```
 
 ### Essential Commands
 - **Detach (leave running)**: `Ctrl+B` then `D`
@@ -27,7 +50,8 @@ apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubus
 
 ### While Attached
 - **Scroll up/down**: `Ctrl+B` then `[` (then use arrow keys, `Q` to exit)
-- **Copy mode**: `Ctrl+B` then `[` (then space to select, Enter to copy)
+- **Stop monitor**: `Ctrl+C`
+- **Copy text**: `Ctrl+B` then `[` (then space to select, Enter to copy)
 
 ## 💡 Usage Examples
 
@@ -37,16 +61,27 @@ apt-get update && apt-get install -y tmux curl && curl -sSL https://raw.githubus
 3. Choose monitor-only mode (safe) or auto-stop mode
 4. Detach with `Ctrl+B` then `D`
 
-### Check Status Later
+### 🔍 Lost Your Session?
 ```bash
-# See if monitor is running
+# Step 1: Check if it's still running
 tmux ls
 
-# Attach to see current status
+# Step 2: If you see "monitor: 1 windows", reattach
 tmux attach -t monitor
 
-# Check the logs
-cat monitor_counter.json
+# Step 3: If no session found, just run the one-liner again!
+```
+
+### Check Status Without Attaching
+```bash
+# View current metrics
+cat /tmp/monitor_counter.json
+
+# View configuration
+cat /tmp/monitor_config.json
+
+# See if monitor is running
+tmux ls | grep monitor
 ```
 
 ### Stop Monitoring
