@@ -500,11 +500,11 @@ EOF
     # Display status
     TIME=$(date '+%H:%M:%S')
     if [ "$BELOW_THRESHOLD" = "true" ]; then
-        printf "[%s] %s📊 Below threshold%s - CPU: %s%% | Mem: %s%% | GPU: %s%% | Counter: %s/%s\n" \
-            "$TIME" "$YELLOW" "$NC" "$CPU" "$MEMORY" "$GPU" "$CONSECUTIVE" "$DURATION_MINUTES"
+        printf "[$TIME] ${YELLOW}📊 Below threshold${NC} - CPU: %s%% | Mem: %s%% | GPU: %s%% | Counter: %s/%s\n" \
+            "$CPU" "$MEMORY" "$GPU" "$CONSECUTIVE" "$DURATION_MINUTES"
     else
-        printf "[%s] %s📊 Active%s - CPU: %s%% | Mem: %s%% | GPU: %s%%\n" \
-            "$TIME" "$GREEN" "$NC" "$CPU" "$MEMORY" "$GPU"
+        printf "[$TIME] ${GREEN}📊 Active${NC} - CPU: %s%% | Mem: %s%% | GPU: %s%%\n" \
+            "$CPU" "$MEMORY" "$GPU"
     fi
     
     # Check if should stop
