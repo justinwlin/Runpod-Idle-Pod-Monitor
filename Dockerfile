@@ -1,5 +1,5 @@
 # RunPod Monitor Dockerfile
-FROM python:3.13-slim
+FROM runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel-ubuntu22.04
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \

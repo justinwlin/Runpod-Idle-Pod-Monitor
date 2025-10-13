@@ -83,22 +83,30 @@ async def get_metrics(request: Request):
     if current_pods:
         active_pod_ids = {pod['id'] for pod in current_pods}
         active_pod_names = {pod['id']: pod['name'] for pod in current_pods}
-        
+        active_pod_statuses = {pod['id']: pod.get('desiredStatus', 'UNKNOWN') for pod in current_pods}
+
         print(f"DEBUG: Found {len(current_pods)} active pods from API: {list(active_pod_names.values())}")
-        
+
         # Get all summaries from data tracker
         all_summaries = data_tracker.get_all_summaries()
         print(f"DEBUG: Data tracker has {len(all_summaries)} pod summaries")
-        
-        # Filter to only include active pods that also have metrics data
+
+        # Filter to only include pods that are RUNNING or EXITED
         active_summaries = []
         for summary in all_summaries:
             if summary['pod_id'] in active_pod_ids:
-                # Update summary with current pod name in case it changed
-                summary['name'] = active_pod_names[summary['pod_id']]
-                active_summaries.append(summary)
-                print(f"DEBUG: Including metrics for active pod: {summary['name']} ({summary['pod_id']})")
-        
+                pod_status = active_pod_statuses[summary['pod_id']]
+
+                # Only include RUNNING and EXITED pods, skip TERMINATED/STOPPED
+                if pod_status in ['RUNNING', 'EXITED']:
+                    # Update summary with current pod name in case it changed
+                    summary['name'] = active_pod_names[summary['pod_id']]
+                    summary['latest']['status'] = pod_status  # Update status to current
+                    active_summaries.append(summary)
+                    print(f"DEBUG: Including metrics for active pod: {summary['name']} ({summary['pod_id']}) - status: {pod_status}")
+                else:
+                    print(f"DEBUG: Skipping pod {active_pod_names[summary['pod_id']]} ({summary['pod_id']}) - status: {pod_status} (not RUNNING/EXITED)")
+
         summaries = active_summaries
         pods_with_metrics = len(active_summaries)
     else:
@@ -431,41 +439,58 @@ async def get_auto_stop_predictions(request: Request):
     """
     Get predictions for which pods are close to being auto-stopped.
     Shows progress bars and statistics for pods approaching thresholds.
-    
+
     Args:
         request: FastAPI request object
-        
+
     Returns:
         HTML response with predictions table
     """
     current_config = get_current_config()
-    
+
     if not current_config:
         return HTMLResponse("<p class='text-muted'>No configuration available</p>")
-    
+
     monitor_only = current_config.get('auto_stop', {}).get('monitor_only', False)
-    
+
     # Read counters from file instead of loading all metrics
     import os
     counters_file = './data/auto_stop_counters.json'
-    
+
     if not os.path.exists(counters_file):
         return HTMLResponse("<p class='text-muted'>No auto-stop tracking data available</p>")
-    
+
     try:
         with open(counters_file, 'r') as f:
             counters = json.load(f)
     except Exception as e:
         return HTMLResponse(f"<p class='text-muted'>Error loading counters: {e}</p>")
-    
+
+    # Get current active pods from API to filter out terminated/deleted pods
+    try:
+        from ..main import fetch_pods
+    except ImportError:
+        from runpod_monitor.main import fetch_pods
+
+    current_pods = fetch_pods()
+    active_pod_ids = set()
+    if current_pods:
+        active_pod_ids = {pod['id'] for pod in current_pods}
+
     # Calculate predictions from counters
     thresholds = current_config.get('auto_stop', {}).get('thresholds', {})
     duration = thresholds.get('duration', 1800)
     sampling_freq = current_config.get('auto_stop', {}).get('sampling', {}).get('frequency', 60)
     points_needed = duration // sampling_freq
-    
+
     predictions = []
+    stale_pod_ids = []
     for pod_id, counter_data in counters.items():
+        # Skip pods that no longer exist (terminated/deleted)
+        if active_pod_ids and pod_id not in active_pod_ids:
+            stale_pod_ids.append(pod_id)
+            continue
+
         consecutive = counter_data.get('consecutive_below_threshold', 0)
         if consecutive > 0:
             remaining_points = max(0, points_needed - consecutive)
@@ -480,6 +505,18 @@ async def get_auto_stop_predictions(request: Request):
                 'avg_memory': counter_data.get('last_metrics', {}).get('memory', 0),
                 'avg_gpu': counter_data.get('last_metrics', {}).get('gpu', 0)
             })
+
+    # Clean up stale counters from file
+    if stale_pod_ids:
+        print(f"🧹 Removing {len(stale_pod_ids)} stale pod counters from tracking")
+        for pod_id in stale_pod_ids:
+            del counters[pod_id]
+        try:
+            with open(counters_file, 'w') as f:
+                json.dump(counters, f, indent=2)
+            print(f"✅ Cleaned up stale counters saved to {counters_file}")
+        except Exception as e:
+            print(f"⚠️ Failed to save cleaned counters: {e}")
     
     if not predictions:
         return HTMLResponse("<p class='text-muted'>No pods currently approaching auto-stop thresholds</p>")

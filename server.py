@@ -11,53 +11,65 @@ from datetime import datetime
 from runpod_monitor.main import load_config, fetch_pods, data_tracker
 from runpod_monitor.web_server import app
 
-def cleanup_terminated_pod_data(pods):
+def cleanup_terminated_pod_data(pods, data_tracker=None):
     """
     Clean up data directories for pods that are not in RUNNING or EXITED states.
-    
+    Also removes them from the summaries cache.
+
     Args:
         pods: List of current pods from the API
-        
+        data_tracker: DataTracker instance to clean summaries cache
+
     Returns:
         Number of pods cleaned up
     """
     try:
         from runpod_monitor.pod_metrics_manager import PodMetricsManager
         import shutil
-        
+
         pod_metrics_manager = PodMetricsManager(base_dir='./data/pods')
-        
+
         # Get list of active pod IDs (only RUNNING and EXITED pods)
         active_pod_ids = [
-            pod['id'] for pod in pods 
+            pod['id'] for pod in pods
             if pod.get('desiredStatus') in ['RUNNING', 'EXITED']
         ]
-        
+
         # Get all pod directories that have data
         all_stored_pods = pod_metrics_manager.list_pods()
-        
+
         # Find pods to clean up (those not in RUNNING or EXITED state)
         pods_to_cleanup = set(all_stored_pods) - set(active_pod_ids)
-        
+
         if pods_to_cleanup:
             print(f"   🧹 Cleaning up data for {len(pods_to_cleanup)} terminated/stopped pods...")
             for pod_id in pods_to_cleanup:
                 pod_info = pod_metrics_manager.get_pod_info(pod_id)
                 pod_name = pod_info.get("pod_name", pod_id[:8])
                 last_status = pod_info.get("last_status", "UNKNOWN")
-                
+
                 # Delete the pod directory (not archiving to prevent data buildup)
                 pod_dir = pod_metrics_manager.get_pod_directory(pod_id)
                 if pod_dir.exists():
                     shutil.rmtree(pod_dir)
-                    print(f"      🗑️ Deleted data for pod '{pod_name}' ({pod_id[:8]}...) - last status: {last_status}")
-            
-            print(f"   ✅ Cleanup completed for terminated/stopped pods")
+                    print(f"      🗑️ Deleted data folder for pod '{pod_name}' ({pod_id[:8]}...) - last status: {last_status}")
+
+                # Also remove from data_tracker summaries cache
+                if data_tracker and pod_id in data_tracker.summaries_cache:
+                    del data_tracker.summaries_cache[pod_id]
+                    print(f"      🧹 Removed '{pod_name}' from summaries cache")
+
+            # Save the updated summaries cache
+            if data_tracker:
+                data_tracker.save_summaries_cache()
+                print(f"   💾 Saved updated summaries cache")
+
+            print(f"   ✅ Cleanup completed - {len(pods_to_cleanup)} pods removed")
             return len(pods_to_cleanup)
         else:
             print(f"   ✅ No terminated/stopped pods to clean up")
             return 0
-            
+
     except Exception as e:
         print(f"   ⚠️ Error during pod data cleanup: {e}")
         return 0
@@ -87,16 +99,16 @@ def simple_monitoring_loop():
                     from runpod_monitor.auto_stop_tracker import AutoStopTracker
                     tracker = AutoStopTracker()
                     tracker.load_counters()
-                    
+
                     # Get only RUNNING pod IDs
                     running_pod_ids = {pod['id'] for pod in pods if pod.get('desiredStatus') == 'RUNNING'}
-                    
+
                     # Find all counters that should be removed (pods that aren't RUNNING)
                     counters_to_remove = [
-                        pod_id for pod_id in tracker.counters.keys() 
+                        pod_id for pod_id in tracker.counters.keys()
                         if pod_id not in running_pod_ids
                     ]
-                    
+
                     # Remove stale counters
                     if counters_to_remove:
                         for pod_id in counters_to_remove:
@@ -105,6 +117,19 @@ def simple_monitoring_loop():
                             print(f"   🧹 Removed counter for non-running pod '{pod_name}' ({pod_id})")
                         tracker.save_counters()
                         print(f"   ✅ Cleaned up {len(counters_to_remove)} non-running pod counters")
+
+                        # ALSO clean summaries cache for these pods immediately (don't wait for hourly cleanup)
+                        from runpod_monitor.main import data_tracker as main_data_tracker
+                        if main_data_tracker:
+                            cache_cleaned = 0
+                            for pod_id in counters_to_remove:
+                                if pod_id in main_data_tracker.summaries_cache:
+                                    del main_data_tracker.summaries_cache[pod_id]
+                                    cache_cleaned += 1
+
+                            if cache_cleaned > 0:
+                                main_data_tracker.save_summaries_cache()
+                                print(f"   🧹 Also removed {cache_cleaned} pods from summaries cache")
                 except Exception as e:
                     print(f"   ⚠️ Could not clean stale counters: {e}")
                 
@@ -250,7 +275,7 @@ def simple_monitoring_loop():
                     )
                     
                     if should_cleanup_pods:
-                        cleanup_terminated_pod_data(pods)
+                        cleanup_terminated_pod_data(pods, main_data_tracker)
                         last_pod_cleanup_time = current_time
                 else:
                     print("   ❌ Data tracker not initialized")
