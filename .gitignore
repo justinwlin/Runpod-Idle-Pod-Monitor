@@ -43,3 +43,4 @@ data/
 # Docker
 .docker/
 /.agent-os
+jqreport.md

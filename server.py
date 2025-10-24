@@ -77,14 +77,16 @@ def cleanup_terminated_pod_data(pods, data_tracker=None):
 def simple_monitoring_loop():
     """Simple monitoring loop that just works."""
     print("🔄 Starting simple monitoring loop...")
-    
+
     # Wait longer before first API call to let server fully start
     print("⏳ Waiting 10 seconds before first API call to ensure server is ready...")
     time.sleep(10)
-    
+
     # Track when we last did pod cleanup
     last_pod_cleanup_time = 0
-    
+
+    from runpod_monitor.main import config
+
     while True:
         current_time = time.time()
         try:
@@ -93,7 +95,7 @@ def simple_monitoring_loop():
             
             if pods:
                 print(f"   📦 Found {len(pods)} pods: {[pod['name'] for pod in pods]}")
-                
+
                 # Clean up auto-stop counters for non-running pods
                 try:
                     from runpod_monitor.auto_stop_tracker import AutoStopTracker
@@ -152,23 +154,23 @@ def simple_monitoring_loop():
                     if main_data_tracker:
                         tracked_pods = set(main_data_tracker.data.keys())
                         terminated_pod_ids = tracked_pods - current_pod_ids
-                        
+
                         for terminated_pod_id in terminated_pod_ids:
                             # Get the last known data for this pod
                             pod_data = main_data_tracker.data.get(terminated_pod_id, [])
                             if pod_data:
                                 last_metric = pod_data[-1]
                                 pod_name = last_metric.get('name', 'Unknown')
-                                
+
                                 # Check if we've already logged termination for this pod
                                 already_terminated = any(
-                                    metric.get('status') == 'TERMINATED' 
+                                    metric.get('status') == 'TERMINATED'
                                     for metric in pod_data
                                 )
-                                
+
                                 if not already_terminated:
                                     print(f"   🔴 TERMINATED: Pod '{pod_name}' ({terminated_pod_id}) no longer exists - logging termination")
-                                    
+
                                     # Create a termination record
                                     termination_record = last_metric.copy()
                                     termination_record.update({
@@ -180,11 +182,11 @@ def simple_monitoring_loop():
                                         'memory_percent': 0,
                                         'uptime_seconds': 0
                                     })
-                                    
+
                                     # Add termination record to the pod's data
                                     main_data_tracker.data[terminated_pod_id].append(termination_record)
                                     main_data_tracker.save_data()
-                    
+
                     # Auto-cleanup exclusion list: remove pods that no longer exist
                     if exclude_pods:
                         original_exclude_count = len(exclude_pods)
@@ -231,7 +233,7 @@ def simple_monitoring_loop():
                         else:
                             main_data_tracker.add_metric(pod_id, pod)
                             print(f"   📊 MONITORED: '{pod_name}' (status: {status}) - metrics collected")
-                            
+
                             # NOTE: We don't apply rolling window here anymore to preserve historical data
                             # Data retention is handled by the retention policy cleanup instead
                             
@@ -262,11 +264,11 @@ def simple_monitoring_loop():
                     print(f"   ✅ Summary: {monitored_count} pods monitored, {excluded_count} pods excluded")
                     if exclude_pods:
                         print(f"   🛡️  Exclude list: {exclude_pods}")
-                    
+
                     # Verify data was actually stored
                     total_summaries = len(main_data_tracker.get_all_summaries())
                     print(f"   📈 Total tracked pods in data_tracker: {total_summaries}")
-                    
+
                     # Clean up pod data for pods that are not RUNNING or EXITED
                     # Run on startup (first iteration) and then every hour
                     should_cleanup_pods = (

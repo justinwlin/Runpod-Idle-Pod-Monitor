@@ -222,6 +222,8 @@ query GetAllPodsWithMetrics {
       containerDiskInGb
       volumeInGb
       costPerHr
+      uptimeSeconds
+      createdAt
       runtime {
         uptimeInSeconds
         container {
