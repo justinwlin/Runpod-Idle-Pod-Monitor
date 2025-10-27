@@ -15,7 +15,6 @@ from .pod_management import router as pod_router
 from .config_management import router as config_router, start_monitoring_background
 from .monitoring import router as monitoring_router
 from .metrics import router as metrics_router
-from .reports import router as reports_router
 
 # Import shared utilities
 from .helpers import get_current_config
@@ -40,7 +39,6 @@ app.include_router(pod_router)
 app.include_router(config_router)
 app.include_router(monitoring_router)
 app.include_router(metrics_router)
-app.include_router(reports_router)
 
 # Health check endpoint for Docker
 @app.get("/status")

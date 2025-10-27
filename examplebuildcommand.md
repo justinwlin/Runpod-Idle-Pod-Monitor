@@ -1,1 +1,1 @@
-depot build --platform linux/amd64 -t justinrunpod/runpodidlemonitor:2.3 --push .
+depot build --platform linux/amd64,linux/arm64 -t justinrunpod/runpodidlemonitor:2.3 --push .
