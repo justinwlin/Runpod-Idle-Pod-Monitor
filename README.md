@@ -63,11 +63,6 @@ Make sure to select CPU pod and not GPU pod, when deploying for the template to 
 
 Recommended: Run this on the cheapest CPU Pod
 
-Docker Image Recommended version currently, if you self deploy / run it not on Runpod, make sure to set the .env file. In Runpod Pods, the ENV already has an API key injected so there is no need to manually set it.
-```
-docker.io/justinrunpod/runpodidlemonitor:2.3
-```
-
 ----
 
 ## ⚡ Quick Start
