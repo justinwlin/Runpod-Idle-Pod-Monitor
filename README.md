@@ -62,6 +62,10 @@ Make sure to select CPU pod and not GPU pod, when deploying for the template to 
 **IF YOU DEPLOY THIS ON RUNPOD** MAKE SURE TO EXCLUDE THE POD YOU ARE RUNNING THIS ON FROM THE MONITORING. There is an "Monitoring" Button on the home page for the pod, which when you click it will switch it to the exclude list.
 
 Recommended: Run this on the cheapest CPU Pod
+Newest version: Nov 5th 2025
+```
+docker.io/justinrunpod/runpodidlemonitor:5
+```
 
 ----
 
